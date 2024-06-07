@@ -1,0 +1,8 @@
+[default]
+extend-ignore-identifiers-re = [
+    "arange",
+    "ARANGE"
+]
+
+[files]
+extend-exclude = []
