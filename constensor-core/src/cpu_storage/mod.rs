@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 
 use crate::{
-    storage::{BackendDevice, BackendStorage},
+    storage::{BackendDevice, BackendStorage, Offsetable},
     DType, Result,
 };
 
@@ -17,10 +17,22 @@ impl<T: DType> BackendStorage<T> for CpuStorage<T> {
     }
 }
 
-impl<T: DType> BackendDevice<T> for CpuDevice {
-    type Storage = CpuStorage<T>;
+impl BackendDevice for CpuDevice {
+    type Storage<X: DType> = CpuStorage<X>;
 
-    fn const_impl<S: crate::Shape>(&self, v: T) -> Result<Self::Storage> {
+    fn const_impl<S: crate::Shape, T: DType>(&self, v: T) -> Result<Self::Storage<T>> {
         Ok(CpuStorage(vec![v; S::element_count()]))
+    }
+
+    fn arange_impl<S: crate::Shape, O: Offsetable>(
+        &self,
+        start: O,
+        step: O,
+    ) -> Result<Self::Storage<O>> {
+        let mut accum = Vec::with_capacity(S::element_count());
+        for i in 0..S::element_count() {
+            accum.push(O::offset(i, start, step));
+        }
+        Ok(CpuStorage(accum))
     }
 }

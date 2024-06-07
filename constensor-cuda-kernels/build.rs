@@ -8,12 +8,12 @@ fn main() {
     #[cfg(any(feature = "half", feature = "bfloat"))]
     let compute_cap = compute_cap().unwrap();
     
-    #[cfg(feature = "half")]
+    #[cfg(feature = "cuda_half")]
     if compute_cap < 53 {
         panic!("`half` is only supported for CUDA compute cap >= 5.3");
     }
 
-    #[cfg(feature = "bfloat")]
+    #[cfg(feature = "cuda_bfloat")]
     if compute_cap < 80 {
         panic!("`bfloat` is only supported for CUDA compute cap >= 8.0");
     }

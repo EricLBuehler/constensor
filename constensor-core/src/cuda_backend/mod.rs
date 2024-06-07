@@ -69,14 +69,31 @@ impl<T: DType> BackendStorage<T> for CudaStorage<T> {
     }
 }
 
-impl<T: DType> BackendDevice<T> for CudaDevice {
-    type Storage = CudaStorage<T>;
+impl BackendDevice for CudaDevice {
+    type Storage<X: DType> = CudaStorage<X>;
 
-    fn const_impl<S: Shape>(&self, v: T) -> Result<Self::Storage> {
+    fn const_impl<S: crate::Shape, T: DType>(&self, v: T) -> Result<Self::Storage<T>> {
         let n_elems = S::element_count();
         let data = unsafe { self.device.alloc::<T>(n_elems) }.w()?;
         let func = self.get_or_load_func::<T>("fill", constensor_cuda_kernels::FILL)?;
         let params = (&data, v, n_elems);
+        let cfg = LaunchConfig::for_num_elems(n_elems as u32);
+        unsafe { func.launch(cfg, params) }.w()?;
+        Ok(CudaStorage {
+            slice: data,
+            device: self.clone(),
+        })
+    }
+
+    fn arange_impl<S: crate::Shape, O: Offsetable>(
+        &self,
+        start: O,
+        step: O,
+    ) -> Result<Self::Storage<O>> {
+        let n_elems = S::element_count();
+        let data = unsafe { self.device.alloc::<T>(n_elems) }.w()?;
+        let func = self.get_or_load_func::<T>("arange", constensor_cuda_kernels::ARANGE)?;
+        let params = (&data, start, step, n_elems);
         let cfg = LaunchConfig::for_num_elems(n_elems as u32);
         unsafe { func.launch(cfg, params) }.w()?;
         Ok(CudaStorage {

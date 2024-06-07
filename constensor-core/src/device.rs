@@ -3,7 +3,7 @@ use crate::cuda_backend::CudaDevice;
 use crate::{
     cpu_storage::CpuDevice,
     storage::{BackendDevice, Storage},
-    DType, Result, Shape,
+    DType, Offsetable, Result, Shape,
 };
 
 /// Marker trait for devices
@@ -69,8 +69,20 @@ impl Device {
     pub(crate) fn const_impl<T: DType, S: Shape>(&self, v: T) -> Result<Storage<T>> {
         match self {
             #[cfg(feature = "cuda")]
-            Self::Cuda(cuda) => Ok(Storage::Cuda(cuda.const_impl::<S>(v)?)),
-            Self::Cpu => Ok(Storage::Cpu(CpuDevice.const_impl::<S>(v)?)),
+            Self::Cuda(cuda) => Ok(Storage::Cuda(cuda.const_impl::<S, T>(v)?)),
+            Self::Cpu => Ok(Storage::Cpu(CpuDevice.const_impl::<S, T>(v)?)),
+        }
+    }
+
+    pub(crate) fn arange_impl<O: Offsetable, S: Shape>(
+        &self,
+        start: O,
+        step: O,
+    ) -> Result<Storage<O>> {
+        match self {
+            #[cfg(feature = "cuda")]
+            Self::Cuda(cuda) => Ok(Storage::Cuda(cuda.arange_impl::<S, O>(start, step)?)),
+            Self::Cpu => Ok(Storage::Cpu(CpuDevice.arange_impl::<S, O>(start, step)?)),
         }
     }
 }

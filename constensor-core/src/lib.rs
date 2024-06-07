@@ -18,4 +18,5 @@ pub use error::{Error, Result};
 pub use graph::{Graph, Op};
 pub use graphtensor::GraphTensor;
 pub use shape::{Shape, R1, R2, R3, R4, R5, R6};
+pub use storage::Offsetable;
 pub use tensor::Tensor;

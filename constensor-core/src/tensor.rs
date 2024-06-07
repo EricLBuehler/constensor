@@ -1,7 +1,7 @@
 use crate::{
     device::{Cpu, Dev},
     storage::Storage,
-    DType, Result, Shape, R1, R2, R3,
+    DType, Offsetable, Result, Shape, R1, R2, R3,
 };
 
 #[cfg(feature = "cuda")]
@@ -67,6 +67,16 @@ macro_rules! tensor_api {
             /// Create a tensor filled with some value with the same shape, dtype, and device as `self`.
             pub fn full_like(&self, v: T) -> Result<Self> {
                 Tensor::<S, T, $device>::full(v)
+            }
+        }
+
+        impl<const A: usize, O: Offsetable> Tensor<R1<A>, O, $device> {
+            /// Materialize a vector ranging from `start` to `A` with step `step`.
+            pub fn arange(start: O, step: O) -> Result<Self> {
+                let device = <$device>::resolve()?;
+                Ok(from_storage(Arc::new(
+                    device.arange_impl::<O, R1<A>>(start, step)?,
+                )))
             }
         }
 
