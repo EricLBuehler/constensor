@@ -29,6 +29,7 @@ fn main() {
     bindings.write("src/lib.rs").unwrap();
 }
 
+#[cfg(any(feature = "cuda_half", feature = "cuda_bfloat"))]
 fn compute_cap() -> Result<usize, Error> {
     println!("cargo:rerun-if-env-changed=CUDA_COMPUTE_CAP");
 
