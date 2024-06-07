@@ -6,7 +6,7 @@ use error::{CudaError, WrapErr};
 use crate::{
     cpu_storage::CpuStorage,
     storage::{BackendDevice, BackendStorage},
-    DType, Result, Shape,
+    DType, Offsetable, Result,
 };
 
 #[derive(Clone)]
@@ -91,8 +91,8 @@ impl BackendDevice for CudaDevice {
         step: O,
     ) -> Result<Self::Storage<O>> {
         let n_elems = S::element_count();
-        let data = unsafe { self.device.alloc::<T>(n_elems) }.w()?;
-        let func = self.get_or_load_func::<T>("arange", constensor_cuda_kernels::ARANGE)?;
+        let data = unsafe { self.device.alloc::<O>(n_elems) }.w()?;
+        let func = self.get_or_load_func::<O>("arange", constensor_cuda_kernels::ARANGE)?;
         let params = (&data, start, step, n_elems);
         let cfg = LaunchConfig::for_num_elems(n_elems as u32);
         unsafe { func.launch(cfg, params) }.w()?;

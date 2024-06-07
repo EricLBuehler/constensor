@@ -5,7 +5,7 @@ pub enum Error {}
 fn main() {
     println!("cargo:rerun-if-changed=build.rs");
 
-    #[cfg(any(feature = "half", feature = "bfloat"))]
+    #[cfg(any(feature = "cuda_half", feature = "cuda_bfloat"))]
     let compute_cap = compute_cap().unwrap();
     
     #[cfg(feature = "cuda_half")]
