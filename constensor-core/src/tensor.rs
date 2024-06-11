@@ -1,7 +1,7 @@
 use crate::{
     device::{Cpu, Dev},
     storage::Storage,
-    DType, Offsetable, Result, Shape, R1, R2, R3,
+    DType, Result, Shape, R1, R2, R3,
 };
 
 #[cfg(feature = "cuda")]
@@ -28,7 +28,9 @@ impl<S: Shape, T: DType, D: Dev> Deref for Tensor<S, T, D> {
     }
 }
 
-fn from_storage<S: Shape, T: DType, D: Dev>(storage: Arc<Storage<T>>) -> Tensor<S, T, D> {
+pub(crate) fn from_storage<S: Shape, T: DType, D: Dev>(
+    storage: Arc<Storage<T>>,
+) -> Tensor<S, T, D> {
     Tensor(Arc::new(Tensor_ {
         storage,
         _ghost: PhantomData,
@@ -37,49 +39,6 @@ fn from_storage<S: Shape, T: DType, D: Dev>(storage: Arc<Storage<T>>) -> Tensor<
 
 macro_rules! tensor_api {
     ($device:ty) => {
-        impl<S: Shape, T: DType> Tensor<S, T, $device> {
-            /// Materialize a tensor filled with some value.
-            pub fn full(v: T) -> Result<Self> {
-                let device = <$device>::resolve()?;
-                Ok(from_storage(Arc::new(device.const_impl::<T, S>(v)?)))
-            }
-
-            /// Materialize a tensor filled with zeros.
-            pub fn zeros() -> Result<Self> {
-                Self::full(T::ZERO)
-            }
-
-            /// Materialize a tensor filled with ones.
-            pub fn ones() -> Result<Self> {
-                Self::full(T::ONE)
-            }
-
-            /// Create a tensor filled with zeros with the same shape, dtype, and device as `self`.
-            pub fn zeros_like(&self) -> Result<Self> {
-                Tensor::<S, T, $device>::zeros()
-            }
-
-            /// Create a tensor filled with ones with the same shape, dtype, and device as `self`.
-            pub fn ones_like(&self) -> Result<Self> {
-                Tensor::<S, T, $device>::ones()
-            }
-
-            /// Create a tensor filled with some value with the same shape, dtype, and device as `self`.
-            pub fn full_like(&self, v: T) -> Result<Self> {
-                Tensor::<S, T, $device>::full(v)
-            }
-        }
-
-        impl<const A: usize, O: Offsetable> Tensor<R1<A>, O, $device> {
-            /// Materialize a vector ranging from `start` to `A` with step `step`.
-            pub fn arange(start: O, step: O) -> Result<Self> {
-                let device = <$device>::resolve()?;
-                Ok(from_storage(Arc::new(
-                    device.arange_impl::<O, R1<A>>(start, step)?,
-                )))
-            }
-        }
-
         impl<T: DType, const A: usize> Tensor<R1<A>, T, $device> {
             /// Get data for a vector.
             pub fn data(&self) -> Result<Cow<Vec<T>>> {

@@ -1,3 +1,5 @@
+use cudarc::nvrtc::CompileError;
+
 /// cudarc related errors
 #[derive(thiserror::Error, Debug)]
 pub enum CudaError {
@@ -12,6 +14,9 @@ pub enum CudaError {
 
     #[error("missing kernel '{module_name}'")]
     MissingKernel { module_name: String },
+
+    #[error("error when compiling to ptx: {err}")]
+    PtxCompileError { err: CompileError },
 }
 
 impl From<CudaError> for crate::Error {
@@ -27,5 +32,13 @@ pub trait WrapErr<O> {
 impl<O, E: Into<CudaError>> WrapErr<O> for std::result::Result<O, E> {
     fn w(self) -> std::result::Result<O, crate::Error> {
         self.map_err(|e| crate::Error::Cuda(Box::new(e.into())).bt())
+    }
+}
+
+impl<O> WrapErr<O> for std::result::Result<O, CompileError> {
+    fn w(self) -> std::result::Result<O, crate::Error> {
+        self.map_err(|e| {
+            crate::Error::Cuda(Box::new(CudaError::PtxCompileError { err: e }).into()).bt()
+        })
     }
 }

@@ -1,48 +1,15 @@
 use std::{
     marker::PhantomData,
-    ops::{Add, Div},
+    ops::{Add, BitAnd, BitOr, BitXor, Div, Mul, Sub},
     sync::{Arc, RwLock, RwLockReadGuard},
 };
 
 use crate::{
     device::Dev,
     graph::{Graph, GraphTensorId, Op},
-    DType, Shape, Tensor,
+    tensor::from_storage,
+    DType, Result, Shape, Tensor, R1,
 };
-
-#[derive(Debug)]
-struct Name(usize);
-impl Name {
-    fn to_name(&self) -> String {
-        format!("v{}", self.0)
-    }
-}
-
-fn handle_node<T: DType>(
-    current_name: &mut usize,
-    header: &mut String,
-    op: &Op<T>,
-    graph: &[Op<T>],
-) -> String {
-    dbg!(&op);
-    match op {
-        Op::BinaryOp {
-            l_id,
-            r_id,
-            operator,
-        } => {
-            let l_name = handle_node(current_name, header, &graph[**l_id], graph);
-            let r_name = handle_node(current_name, header, &graph[**r_id], graph);
-            format!("({l_name} {operator} {r_name})")
-        }
-        Op::Fill { v } => {
-            *current_name += 1;
-            let name = Name(*current_name);
-            *header += &format!("T {} = {v:?};\n", name.to_name());
-            format!("({})", name.to_name())
-        }
-    }
-}
 
 /// A tensor representing an intermediary result of a graph. Performing operations
 /// on this tensor will not cause any computations.
@@ -88,32 +55,27 @@ impl<S: Shape, T: DType, D: Dev> GraphTensor<S, T, D> {
         self.id
     }
 
-    #[must_use]
-    /// Convert this GraphTensor into a concrete tensor.
-    pub fn to_tensor(self) -> Tensor<S, T, D> {
+    /// Convert this `GraphTensor` into a concrete `Tensor`.
+    pub fn to_tensor(self) -> Result<Tensor<S, T, D>> {
         let graph = self.graph.read().unwrap();
         let nodes = &*graph.get_ops();
 
-        let mut header = "".to_string();
-        let body = handle_node(&mut 0, &mut header, nodes.last().unwrap(), nodes);
-        dbg!(&body);
-        dbg!(&header);
+        let device = D::resolve()?;
+        let storage = device.compile_and_run_graph::<T, S>(nodes)?;
+        Ok(from_storage(Arc::new(storage)))
+    }
+}
 
-        let template_kernel = format!(
-            r#"
-            template <typename T>
-            __device__ void fill_with(T *buf, const size_t numel) {{
-                for (unsigned int i = blockIdx.x * blockDim.x + threadIdx.x; i < numel;
-                    i += blockDim.x * gridDim.x) {{
-                    {header}
-                    buf[i] = {body};
-                }}
-            }}"#
-        );
-
-        dbg!(&template_kernel);
-
-        todo!()
+impl<const A: usize, T: DType, D: Dev> GraphTensor<R1<A>, T, D> {
+    /// A GraphTensor representing a vector ranging from `start` to `A` with step `step`.
+    pub fn arange(mut graph: Graph<T>, start: T, step: T) -> Self {
+        let id = graph.next_id();
+        graph.add_op(Op::Arange { start, step });
+        Self {
+            id,
+            graph: Arc::new(RwLock::new(graph)),
+            _ghost: PhantomData,
+        }
     }
 }
 
@@ -140,3 +102,8 @@ macro_rules! graphtensor_binop {
 
 graphtensor_binop!(Add, add, "+");
 graphtensor_binop!(Div, div, "/");
+graphtensor_binop!(Mul, mul, "*");
+graphtensor_binop!(Sub, sub, "-");
+graphtensor_binop!(BitAnd, bitand, "&");
+graphtensor_binop!(BitOr, bitor, "|");
+graphtensor_binop!(BitXor, bitxor, "^");

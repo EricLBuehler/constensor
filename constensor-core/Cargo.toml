@@ -10,15 +10,12 @@ license.workspace = true
 readme = "README.md"
 
 [dependencies]
-constensor-cuda-kernels = { workspace = true, optional = true }
 cudarc = { workspace = true, optional = true }
 thiserror.workspace = true
 half = { workspace = true, optional = true }
 
 [features]
-default = []
-cuda = ["cudarc", "dep:constensor-cuda-kernels"]
+default = ["cuda"]
+cuda = ["cudarc"]
 half = ["dep:half"]
 bfloat = ["dep:half"]
-cuda_half = ["half", "constensor-cuda-kernels/half"]
-cuda_bfloat = ["bfloat", "constensor-cuda-kernels/bfloat"]

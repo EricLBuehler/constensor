@@ -2,9 +2,6 @@
 members = [
     "constensor-core",
 ]
-exclude = [
-   "constensor-cuda-kernels",
-]
 resolver = "2"
 
 [workspace.package]

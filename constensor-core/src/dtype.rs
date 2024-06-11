@@ -29,7 +29,6 @@ macro_rules! dtype {
     };
 }
 
-dtype!(bool, false, true, "bool");
 dtype!(u8, 0u8, 1u8, "u8");
 dtype!(u32, 0u32, 1u32, "u32");
 dtype!(i64, 0i64, 1i64, "i64");

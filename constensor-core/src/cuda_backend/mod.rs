@@ -1,12 +1,20 @@
-use std::{borrow::Cow, ops::Deref, sync::Arc};
+use std::{
+    borrow::Cow,
+    hash::{DefaultHasher, Hash, Hasher},
+    ops::Deref,
+    sync::Arc,
+};
 mod error;
-use cudarc::driver::{CudaFunction, CudaSlice, LaunchAsync, LaunchConfig};
+use cudarc::{
+    driver::{CudaFunction, CudaSlice, LaunchAsync, LaunchConfig},
+    nvrtc::{CompileOptions, Ptx},
+};
 use error::{CudaError, WrapErr};
 
 use crate::{
     cpu_storage::CpuStorage,
     storage::{BackendDevice, BackendStorage},
-    DType, Offsetable, Result,
+    DType, Op, Result,
 };
 
 #[derive(Clone)]
@@ -21,18 +29,12 @@ impl CudaDevice {
         })
     }
 
-    pub(crate) fn get_or_load_func<T: DType>(
-        &self,
-        module_name: &str,
-        ptx: &'static str,
-    ) -> Result<CudaFunction> {
-        let module_name = format!("{module_name}_{}", T::NAME);
-        let module_name = &module_name;
+    pub(crate) fn get_or_load_func(&self, module_name: &str, ptx: Ptx) -> Result<CudaFunction> {
         if !self.has_func(module_name, module_name) {
             // Leaking the string here is a bit sad but we need a &'static str and this is only
             // done once per kernel name.
             let static_module_name = Box::leak(module_name.to_string().into_boxed_str());
-            self.load_ptx(ptx.into(), module_name, &[static_module_name])
+            self.load_ptx(ptx, module_name, &[static_module_name])
                 .map_err(|cuda| CudaError::Load {
                     cuda,
                     module_name: module_name.to_string(),
@@ -69,31 +71,94 @@ impl<T: DType> BackendStorage<T> for CudaStorage<T> {
     }
 }
 
+#[derive(Debug)]
+struct Name(usize);
+impl Name {
+    fn to_name(&self) -> String {
+        format!("v{}", self.0)
+    }
+}
+
+fn handle_node<T: DType>(
+    current_name: &mut usize,
+    header: &mut String,
+    op: &Op<T>,
+    graph: &[Op<T>],
+) -> String {
+    dbg!(&op);
+    match op {
+        Op::BinaryOp {
+            l_id,
+            r_id,
+            operator,
+        } => {
+            let l_name = handle_node(current_name, header, &graph[**l_id], graph);
+            let r_name = handle_node(current_name, header, &graph[**r_id], graph);
+            format!("({l_name} {operator} {r_name})")
+        }
+        Op::Fill { v } => {
+            *current_name += 1;
+            let name = Name(*current_name);
+            *header += &format!("T {} = {v:?};\n", name.to_name());
+            format!("({})", name.to_name())
+        }
+        Op::Arange { start, step } => {
+            *current_name += 1;
+            let name = Name(*current_name);
+            *header += &format!(
+                "T {} = static_cast<T>(i) * {step:?} + {start:?};\n",
+                name.to_name()
+            );
+            format!("({})", name.to_name())
+        }
+    }
+}
+
 impl BackendDevice for CudaDevice {
     type Storage<X: DType> = CudaStorage<X>;
 
-    fn const_impl<S: crate::Shape, T: DType>(&self, v: T) -> Result<Self::Storage<T>> {
+    fn compile_and_run_graph<S: crate::Shape, T: DType>(
+        &self,
+        nodes: &[crate::Op<T>],
+    ) -> Result<Self::Storage<T>> {
+        let mut header = "".to_string();
+        let body = handle_node(&mut 0, &mut header, nodes.last().unwrap(), nodes);
+
+        let mut template_kernel = format!(
+            r#"
+            template <typename T>
+            __device__ void ptx_kernel(T *buf, const size_t numel) {{
+                for (unsigned int i = blockIdx.x * blockDim.x + threadIdx.x; i < numel;
+                    i += blockDim.x * gridDim.x) {{
+                    {header}
+                    buf[i] = {body};
+                }}
+            }}"#
+        );
+
+        // Monomorphize
+        template_kernel = template_kernel.replace('T', T::NAME);
+
+        // Module name is based on hash of template
+        let mut hasher = DefaultHasher::new();
+        template_kernel.hash(&mut hasher);
+        let module_name = format!("jit_kernel_{}_{}", hasher.finish(), T::NAME);
+
+        let ptx = cudarc::nvrtc::compile_ptx_with_opts(
+            template_kernel,
+            CompileOptions {
+                use_fast_math: Some(true),
+                ..Default::default()
+            },
+        )
+        .w()?;
+
         let n_elems = S::element_count();
         let data = unsafe { self.device.alloc::<T>(n_elems) }.w()?;
-        let func = self.get_or_load_func::<T>("fill", constensor_cuda_kernels::FILL)?;
-        let params = (&data, v, n_elems);
-        let cfg = LaunchConfig::for_num_elems(n_elems as u32);
-        unsafe { func.launch(cfg, params) }.w()?;
-        Ok(CudaStorage {
-            slice: data,
-            device: self.clone(),
-        })
-    }
 
-    fn arange_impl<S: crate::Shape, O: Offsetable>(
-        &self,
-        start: O,
-        step: O,
-    ) -> Result<Self::Storage<O>> {
-        let n_elems = S::element_count();
-        let data = unsafe { self.device.alloc::<O>(n_elems) }.w()?;
-        let func = self.get_or_load_func::<O>("arange", constensor_cuda_kernels::ARANGE)?;
-        let params = (&data, start, step, n_elems);
+        let func = self.get_or_load_func(&module_name, ptx)?;
+
+        let params = (&data, n_elems);
         let cfg = LaunchConfig::for_num_elems(n_elems as u32);
         unsafe { func.launch(cfg, params) }.w()?;
         Ok(CudaStorage {
