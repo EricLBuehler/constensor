@@ -6,13 +6,11 @@ use std::{
     sync::Arc,
 };
 mod error;
-mod stdint;
 use cudarc::{
     driver::{CudaFunction, CudaSlice, LaunchAsync, LaunchConfig},
     nvrtc::{CompileOptions, Ptx},
 };
 use error::{CudaError, WrapErr};
-use stdint::STDINT;
 
 use crate::{
     cpu_storage::CpuStorage,
@@ -170,7 +168,9 @@ impl BackendDevice for CudaDevice {
 
         let template_kernel = format!(
             r#"
-            {STDINT}
+            typedef unsigned char uint8_t;
+            typedef unsigned int uint32_t;
+            typedef long long int int64_t;
             {}
 
             template <typename T>
