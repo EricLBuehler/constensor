@@ -15,7 +15,8 @@ thiserror.workspace = true
 half = { workspace = true, optional = true }
 
 [features]
-default = ["cuda", "half", "bfloat"]
+default = []
+all = ["cuda", "half", "bfloat"]
 cuda = ["cudarc"]
 half = ["dep:half"]
 bfloat = ["dep:half"]

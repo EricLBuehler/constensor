@@ -86,7 +86,6 @@ fn handle_node<T: DType>(
     op: &Op<T>,
     graph: &[Op<T>],
 ) -> String {
-    dbg!(&op);
     match op {
         Op::BinaryOp {
             l_id,
@@ -138,8 +137,6 @@ fn cuda_include_dir() -> Option<String> {
         "C:/Program Files/NVIDIA GPU Computing Toolkit",
         "C:/CUDA",
     ];
-
-    println!("cargo:info={roots:?}");
 
     #[allow(unused)]
     let roots = roots.into_iter().map(Into::<PathBuf>::into);

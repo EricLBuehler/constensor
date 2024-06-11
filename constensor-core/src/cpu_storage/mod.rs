@@ -18,7 +18,6 @@ impl<T: DType> BackendStorage<T> for CpuStorage<T> {
 }
 
 fn evaluate_node<T: DType, S: Shape>(op: &Op<T>, graph: &[Op<T>]) -> Vec<T> {
-    dbg!(&op);
     match op {
         Op::BinaryOp {
             l_id,
@@ -54,7 +53,6 @@ impl BackendDevice for CpuDevice {
         &self,
         graph: &[Op<T>],
     ) -> Result<Self::Storage<T>> {
-        dbg!(&graph);
         Ok(CpuStorage(evaluate_node::<T, S>(
             graph.last().unwrap(),
             graph,

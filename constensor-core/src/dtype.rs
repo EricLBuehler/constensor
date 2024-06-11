@@ -29,12 +29,22 @@ pub trait DType:
 
 #[cfg(not(feature = "cuda"))]
 /// Marker trait for tensor datatypes.
-pub trait DType: Debug + Clone + Copy {
+pub trait DType:
+    Debug
+    + Clone
+    + Copy
+    + Add<Output = Self>
+    + Div<Output = Self>
+    + Sub<Output = Self>
+    + Mul<Output = Self>
+{
     const ZERO: Self;
     const ONE: Self;
     const NAME: &'static str;
     const C_NAME: &'static str;
     const C_DEP: Option<&'static str>;
+
+    fn offset(i: usize, start: Self, step: Self) -> Self;
 }
 
 macro_rules! dtype {
@@ -55,6 +65,7 @@ macro_rules! dtype {
 
 dtype!(u8, 0u8, 1u8, "u8", "uint8_t");
 dtype!(u32, 0u32, 1u32, "u32", "uint32_t");
+dtype!(i32, 0i32, 1i32, "i32", "int");
 dtype!(i64, 0i64, 1i64, "i64", "int64_t");
 dtype!(f32, 0f32, 1f32, "f32", "float");
 dtype!(f64, 0f64, 1f64, "f64", "double");
