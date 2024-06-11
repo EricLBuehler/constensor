@@ -181,7 +181,6 @@ test_for_device_half!(Cpu, cpu_tests_half);
 #[cfg(all(feature = "cuda", feature = "half"))]
 test_for_device_half!(Cuda<0>, cuda_tests_half);
 
-
 #[cfg(feature = "bfloat")]
 macro_rules! test_for_device_bfloat {
     ($dev:ty, $name:ident) => {
@@ -228,8 +227,10 @@ macro_rules! test_for_device_bfloat {
             #[test]
             fn arange() {
                 let graph = Graph::empty();
-                let x =
-                    GraphTensor::<R1<3>, bf16, $dev>::fill(graph.clone(), bf16::from_f32_const(1.0));
+                let x = GraphTensor::<R1<3>, bf16, $dev>::fill(
+                    graph.clone(),
+                    bf16::from_f32_const(1.0),
+                );
                 let y = GraphTensor::<R1<3>, bf16, $dev>::arange(
                     graph.clone(),
                     bf16::from_f32_const(0.0),

@@ -106,7 +106,7 @@ fn handle_node<T: DType>(
             *current_name += 1;
             let name = Name(*current_name);
             *header += &format!(
-                "T {} = static_cast<T>(i) * {step:?} + {start:?};\n",
+                "T {} = static_cast<T>(i) * static_cast<T>({step:?}) + static_cast<T>({start:?});\n",
                 name.to_name()
             );
             format!("({})", name.to_name())
@@ -114,7 +114,7 @@ fn handle_node<T: DType>(
     }
 }
 
-fn cuda_include_dir() -> Option<String> {
+fn cuda_include_dir() -> Option<PathBuf> {
     // NOTE: copied from cudarc build.rs.
     let env_vars = [
         "CUDA_PATH",
@@ -144,7 +144,6 @@ fn cuda_include_dir() -> Option<String> {
     env_vars
         .chain(roots)
         .find(|path| path.join("include").join("cuda.h").is_file())
-        .map(|x| x.to_str().unwrap().to_string())
 }
 
 impl BackendDevice for CudaDevice {
@@ -192,7 +191,11 @@ impl BackendDevice for CudaDevice {
             template_kernel,
             CompileOptions {
                 use_fast_math: Some(true),
-                include_paths: vec![cuda_include_dir().unwrap()],
+                include_paths: vec![cuda_include_dir()
+                    .unwrap()
+                    .join("include")
+                    .display()
+                    .to_string()],
                 ..Default::default()
             },
         )
