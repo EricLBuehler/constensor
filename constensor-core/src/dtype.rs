@@ -1,10 +1,27 @@
 use std::{
     fmt::Debug,
-    ops::{Add, Div, Mul, Sub},
+    ops::{Add, Div, Mul, Neg, Sub},
 };
+
+#[cfg(feature = "bfloat")]
+use half::bf16;
+#[cfg(feature = "half")]
+use half::f16;
 
 #[cfg(feature = "cuda")]
 use cudarc::driver::DeviceRepr;
+
+/// Marker trait for signed datatypes.
+pub trait SignedDType: Neg<Output = Self> {}
+
+impl SignedDType for i32 {}
+impl SignedDType for i64 {}
+impl SignedDType for f32 {}
+impl SignedDType for f64 {}
+#[cfg(feature = "bfloat")]
+impl SignedDType for bf16 {}
+#[cfg(feature = "half")]
+impl SignedDType for f16 {}
 
 #[cfg(feature = "cuda")]
 /// Marker trait for tensor datatypes.
@@ -70,10 +87,6 @@ dtype!(i64, 0i64, 1i64, "i64", "int64_t");
 dtype!(f32, 0f32, 1f32, "f32", "float");
 dtype!(f64, 0f64, 1f64, "f64", "double");
 
-#[cfg(feature = "bfloat")]
-use half::bf16;
-#[cfg(feature = "half")]
-use half::f16;
 #[cfg(feature = "half")]
 impl DType for f16 {
     const ZERO: f16 = f16::from_f32_const(0.0);

@@ -1,8 +1,8 @@
-use std::{borrow::Cow, ops::Neg};
+use std::borrow::Cow;
 
 use crate::{
     storage::{BackendDevice, BackendStorage},
-    DType, Op, Result, Shape,
+    DType, Op, Result, Shape, SignedDType,
 };
 
 pub struct CpuDevice;
@@ -52,32 +52,8 @@ fn evaluate_node_unsigned<T: DType, S: Shape>(op: &Op<T>, graph: &[Op<T>]) -> Ve
     }
 }
 
-fn evaluate_node<T: DType + Neg<Output = T>, S: Shape>(op: &Op<T>, graph: &[Op<T>]) -> Vec<T> {
+fn evaluate_node<T: DType + SignedDType, S: Shape>(op: &Op<T>, graph: &[Op<T>]) -> Vec<T> {
     match op {
-        Op::BinaryOp {
-            l_id,
-            r_id,
-            operator,
-        } => {
-            let l_name = evaluate_node::<T, S>(&graph[**l_id], graph);
-            let r_name = evaluate_node::<T, S>(&graph[**r_id], graph);
-            let mut out = vec![T::ZERO; l_name.len()];
-            let op = operator.to_closure();
-            for (i, (x, y)) in l_name.iter().zip(r_name).enumerate() {
-                out[i] = op(*x, y);
-            }
-            out
-        }
-        Op::Fill { v } => {
-            vec![*v; S::element_count()]
-        }
-        Op::Arange { start, step } => {
-            let mut accum = Vec::with_capacity(S::element_count());
-            for i in 0..S::element_count() {
-                accum.push(T::offset(i, *start, *step));
-            }
-            accum
-        }
         Op::UnaryOp { v_id, operator } => {
             let v_name = evaluate_node::<T, S>(&graph[**v_id], graph);
             let mut out = vec![T::ZERO; v_name.len()];
@@ -87,6 +63,7 @@ fn evaluate_node<T: DType + Neg<Output = T>, S: Shape>(op: &Op<T>, graph: &[Op<T
             }
             out
         }
+        other => evaluate_node_unsigned::<T, S>(other, graph),
     }
 }
 
@@ -103,7 +80,7 @@ impl BackendDevice for CpuDevice {
         )))
     }
 
-    fn compile_and_run_graph<S: Shape, T: DType + Neg<Output = T>>(
+    fn compile_and_run_graph<S: Shape, T: DType + SignedDType>(
         &self,
         graph: &[Op<T>],
     ) -> Result<Self::Storage<T>> {

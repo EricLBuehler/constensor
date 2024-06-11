@@ -1,11 +1,9 @@
-use std::ops::Neg;
-
 #[cfg(feature = "cuda")]
 use crate::cuda_backend::CudaDevice;
 use crate::{
     cpu_storage::CpuDevice,
     storage::{BackendDevice, Storage},
-    DType, Op, Result, Shape,
+    DType, Op, Result, Shape, SignedDType,
 };
 
 /// Marker trait for devices
@@ -83,7 +81,7 @@ impl Device {
         }
     }
 
-    pub fn compile_and_run_graph<T: DType + Neg<Output = T>, S: Shape>(
+    pub fn compile_and_run_graph<T: DType + SignedDType, S: Shape>(
         &self,
         graph: &[Op<T>],
     ) -> Result<Storage<T>> {

@@ -13,7 +13,7 @@ mod tensor;
 pub use device::Cpu;
 #[cfg(feature = "cuda")]
 pub use device::Cuda;
-pub use dtype::DType;
+pub use dtype::{DType, SignedDType};
 pub use error::{Error, Result};
 pub use graph::{Graph, Op};
 pub use graphtensor::GraphTensor;

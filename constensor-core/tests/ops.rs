@@ -260,7 +260,7 @@ macro_rules! test_for_device_float_unary {
     ($dev:ty, $name:ident) => {
         mod $name {
             use super::*;
-            
+
             #[test]
             fn add_div_neg() {
                 let graph = Graph::empty();

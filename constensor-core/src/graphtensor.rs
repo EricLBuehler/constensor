@@ -8,7 +8,7 @@ use crate::{
     device::Dev,
     graph::{BinaryOpType, Graph, GraphTensorId, Op, UnaryOpType},
     tensor::from_storage,
-    DType, Result, Shape, Tensor, R1,
+    DType, Result, Shape, SignedDType, Tensor, R1,
 };
 
 /// A tensor representing an intermediary result of a graph. Performing operations
@@ -67,9 +67,8 @@ impl<S: Shape, T: DType, D: Dev> GraphTensor<S, T, D> {
     }
 }
 
-impl<S: Shape, T: DType + Neg<Output = T>, D: Dev> GraphTensor<S, T, D> {
+impl<S: Shape, T: DType + SignedDType, D: Dev> GraphTensor<S, T, D> {
     /// Convert this `GraphTensor` into a concrete `Tensor`.
-    /// Only unsigned operations.
     pub fn to_tensor(self) -> Result<Tensor<S, T, D>> {
         let graph = self.graph.read().unwrap();
         let nodes = &*graph.get_ops();

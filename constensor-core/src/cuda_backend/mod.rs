@@ -1,7 +1,7 @@
 use std::{
     borrow::Cow,
     hash::{DefaultHasher, Hash, Hasher},
-    ops::{Deref, Neg},
+    ops::Deref,
     path::PathBuf,
     sync::Arc,
 };
@@ -15,7 +15,7 @@ use error::{CudaError, WrapErr};
 use crate::{
     cpu_storage::CpuStorage,
     storage::{BackendDevice, BackendStorage},
-    DType, Op, Result,
+    DType, Op, Result, SignedDType,
 };
 
 #[derive(Clone)]
@@ -228,7 +228,7 @@ impl BackendDevice for CudaDevice {
         self.run_graph::<S, T>(header, body)
     }
 
-    fn compile_and_run_graph<S: crate::Shape, T: DType + Neg<Output = T>>(
+    fn compile_and_run_graph<S: crate::Shape, T: DType + SignedDType>(
         &self,
         nodes: &[crate::Op<T>],
     ) -> Result<Self::Storage<T>> {
