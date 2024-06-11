@@ -2,14 +2,17 @@ use std::{
     borrow::Cow,
     hash::{DefaultHasher, Hash, Hasher},
     ops::Deref,
+    path::PathBuf,
     sync::Arc,
 };
 mod error;
+mod stdint;
 use cudarc::{
     driver::{CudaFunction, CudaSlice, LaunchAsync, LaunchConfig},
     nvrtc::{CompileOptions, Ptx},
 };
 use error::{CudaError, WrapErr};
+use stdint::STDINT;
 
 use crate::{
     cpu_storage::CpuStorage,
@@ -114,6 +117,41 @@ fn handle_node<T: DType>(
     }
 }
 
+fn cuda_include_dir() -> Option<String> {
+    // NOTE: copied from cudarc build.rs.
+    let env_vars = [
+        "CUDA_PATH",
+        "CUDA_ROOT",
+        "CUDA_TOOLKIT_ROOT_DIR",
+        "CUDNN_LIB",
+    ];
+    #[allow(unused)]
+    let env_vars = env_vars
+        .into_iter()
+        .map(std::env::var)
+        .filter_map(std::result::Result::ok)
+        .map(Into::<PathBuf>::into);
+
+    let roots = [
+        "/usr",
+        "/usr/local/cuda",
+        "/opt/cuda",
+        "/usr/lib/cuda",
+        "C:/Program Files/NVIDIA GPU Computing Toolkit",
+        "C:/CUDA",
+    ];
+
+    println!("cargo:info={roots:?}");
+
+    #[allow(unused)]
+    let roots = roots.into_iter().map(Into::<PathBuf>::into);
+
+    env_vars
+        .chain(roots)
+        .find(|path| path.join("include").join("cuda.h").is_file())
+        .map(|x| x.to_str().unwrap().to_string())
+}
+
 impl BackendDevice for CudaDevice {
     type Storage<X: DType> = CudaStorage<X>;
 
@@ -132,7 +170,7 @@ impl BackendDevice for CudaDevice {
 
         let template_kernel = format!(
             r#"
-            #include <stdint.h>
+            {STDINT}
             {}
 
             template <typename T>
@@ -157,6 +195,7 @@ impl BackendDevice for CudaDevice {
             template_kernel,
             CompileOptions {
                 use_fast_math: Some(true),
+                include_paths: vec![cuda_include_dir().unwrap()],
                 ..Default::default()
             },
         )
