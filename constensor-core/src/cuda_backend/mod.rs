@@ -94,7 +94,7 @@ fn handle_node<T: DType>(
         } => {
             let l_name = handle_node(current_name, header, &graph[**l_id], graph);
             let r_name = handle_node(current_name, header, &graph[**r_id], graph);
-            format!("({l_name} {operator} {r_name})")
+            format!("({l_name} {} {r_name})", operator.to_c_op())
         }
         Op::Fill { v } => {
             *current_name += 1;

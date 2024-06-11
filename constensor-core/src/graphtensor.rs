@@ -1,12 +1,12 @@
 use std::{
     marker::PhantomData,
-    ops::{Add, BitAnd, BitOr, BitXor, Div, Mul, Sub},
+    ops::{Add, Div, Mul, Sub},
     sync::{Arc, RwLock, RwLockReadGuard},
 };
 
 use crate::{
     device::Dev,
-    graph::{Graph, GraphTensorId, Op},
+    graph::{BinaryOpType, Graph, GraphTensorId, Op},
     tensor::from_storage,
     DType, Result, Shape, Tensor, R1,
 };
@@ -80,7 +80,7 @@ impl<const A: usize, T: DType, D: Dev> GraphTensor<R1<A>, T, D> {
 }
 
 macro_rules! graphtensor_binop {
-    ($trait:ident, $fn_name:ident, $op:expr) => {
+    ($trait:ident, $fn_name:ident) => {
         impl<S: Shape, T: DType, D: Dev> $trait for GraphTensor<S, T, D> {
             type Output = GraphTensor<S, T, D>;
             /// Add an elementwise addition operation to the graph.
@@ -88,7 +88,7 @@ macro_rules! graphtensor_binop {
                 self.graph.write().unwrap().add_op(Op::BinaryOp {
                     l_id: self.id(),
                     r_id: rhs.id(),
-                    operator: $op,
+                    operator: BinaryOpType::$trait,
                 });
                 Self {
                     id: self.graph.write().unwrap().next_id(),
@@ -100,10 +100,7 @@ macro_rules! graphtensor_binop {
     };
 }
 
-graphtensor_binop!(Add, add, "+");
-graphtensor_binop!(Div, div, "/");
-graphtensor_binop!(Mul, mul, "*");
-graphtensor_binop!(Sub, sub, "-");
-graphtensor_binop!(BitAnd, bitand, "&");
-graphtensor_binop!(BitOr, bitor, "|");
-graphtensor_binop!(BitXor, bitxor, "^");
+graphtensor_binop!(Add, add);
+graphtensor_binop!(Div, div);
+graphtensor_binop!(Mul, mul);
+graphtensor_binop!(Sub, sub);

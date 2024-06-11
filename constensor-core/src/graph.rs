@@ -35,6 +35,34 @@ impl<T: DType> Graph<T> {
 }
 
 #[derive(PartialEq, Debug, Clone)]
+pub enum BinaryOpType {
+    Add,
+    Div,
+    Sub,
+    Mul,
+}
+
+impl BinaryOpType {
+    pub fn to_c_op(&self) -> &'static str {
+        match self {
+            Self::Add => "+",
+            Self::Div => "/",
+            Self::Sub => "-",
+            Self::Mul => "*",
+        }
+    }
+
+    pub fn to_closure<T: DType>(&self) -> impl Fn(T, T) -> T {
+        match self {
+            Self::Add => |x, y| x + y,
+            Self::Div => |x, y| x / y,
+            Self::Sub => |x, y| x - y,
+            Self::Mul => |x, y| x * y,
+        }
+    }
+}
+
+#[derive(PartialEq, Debug, Clone)]
 pub enum Op<T: DType> {
     Fill {
         v: T,
@@ -46,7 +74,7 @@ pub enum Op<T: DType> {
     BinaryOp {
         l_id: GraphTensorId,
         r_id: GraphTensorId,
-        operator: &'static str,
+        operator: BinaryOpType,
     },
 }
 
