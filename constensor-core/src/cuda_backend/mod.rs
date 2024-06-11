@@ -124,25 +124,34 @@ impl BackendDevice for CudaDevice {
         let mut header = "".to_string();
         let body = handle_node(&mut 0, &mut header, nodes.last().unwrap(), nodes);
 
-        let mut template_kernel = format!(
+        // Module name is based on hash of body and header
+        let mut hasher = DefaultHasher::new();
+        body.hash(&mut hasher);
+        header.hash(&mut hasher);
+        let module_name = format!("jit_kernel_{}_{}", hasher.finish(), T::NAME);
+
+        let template_kernel = format!(
             r#"
+            #include <stdint.h>
+            {}
+
             template <typename T>
-            __device__ void ptx_kernel(T *buf, const size_t numel) {{
+            __device__ void {module_name}_kernel(T *buf, const size_t numel) {{
                 for (unsigned int i = blockIdx.x * blockDim.x + threadIdx.x; i < numel;
                     i += blockDim.x * gridDim.x) {{
                     {header}
                     buf[i] = {body};
                 }}
-            }}"#
+            }}
+            
+            extern "C" __global__ void {module_name}({} *buf, const size_t numel) {{
+                {module_name}_kernel(buf, numel);
+            }}
+
+            "#,
+            T::C_DEP.unwrap_or(""),
+            T::C_NAME,
         );
-
-        // Monomorphize
-        template_kernel = template_kernel.replace('T', T::NAME);
-
-        // Module name is based on hash of template
-        let mut hasher = DefaultHasher::new();
-        template_kernel.hash(&mut hasher);
-        let module_name = format!("jit_kernel_{}_{}", hasher.finish(), T::NAME);
 
         let ptx = cudarc::nvrtc::compile_ptx_with_opts(
             template_kernel,
