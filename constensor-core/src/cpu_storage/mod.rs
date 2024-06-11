@@ -63,6 +63,20 @@ fn evaluate_node<T: DType + SignedDType, S: Shape>(op: &Op<T>, graph: &[Op<T>]) 
             }
             out
         }
+        Op::BinaryOp {
+            l_id,
+            r_id,
+            operator,
+        } => {
+            let l_name = evaluate_node::<T, S>(&graph[**l_id], graph);
+            let r_name = evaluate_node::<T, S>(&graph[**r_id], graph);
+            let mut out = vec![T::ZERO; l_name.len()];
+            let op = operator.to_closure();
+            for (i, (x, y)) in l_name.iter().zip(r_name).enumerate() {
+                out[i] = op(*x, y);
+            }
+            out
+        }
         other => evaluate_node_unsigned::<T, S>(other, graph),
     }
 }
