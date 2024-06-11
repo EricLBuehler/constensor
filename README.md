@@ -13,7 +13,7 @@ ML framework featuring compile time checks and accelerated by a JIT compiler.
 Constensor is a fast alternative to Candle which provides the following key features:
 - **Compile time shape, dtype, and device checking**: Develop quickly
 - **Opt-in half precision support**: Run on any GPU
-- **Elementwise JIT kernel fusion**: Accelerate CUDA kernels automatically
+- **Elementwise JIT kernel fusion**: Accelerate CUDA kernels automatically by fusing binary and unary operations
 
 ## Opt-in half precision support
 Via the following feature flags:
