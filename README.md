@@ -15,6 +15,7 @@ Constensor is a fast alternative to Candle which provides the following key feat
 - **Opt-in half precision support**: Run on any GPU
 - **Elementwise JIT kernel fusion**: Accelerate CUDA kernels automatically by fusing binary and unary operations
 
+
 ```rust
 use constensor_core::{Cpu, Graph, GraphTensor, Tensor, R2};
 
