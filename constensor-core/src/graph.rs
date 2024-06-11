@@ -1,5 +1,5 @@
 use std::{
-    ops::Deref,
+    ops::{Deref, Neg},
     sync::{Arc, RwLock, RwLockReadGuard},
 };
 
@@ -63,6 +63,25 @@ impl BinaryOpType {
 }
 
 #[derive(PartialEq, Debug, Clone)]
+pub enum UnaryOpType {
+    Neg,
+}
+
+impl UnaryOpType {
+    pub fn to_c_op(&self) -> &'static str {
+        match self {
+            Self::Neg => "-",
+        }
+    }
+
+    pub fn to_closure<T: DType + Neg<Output = T>>(&self) -> impl Fn(T) -> T {
+        match self {
+            Self::Neg => |x: T| -x,
+        }
+    }
+}
+
+#[derive(PartialEq, Debug, Clone)]
 pub enum Op<T: DType> {
     Fill {
         v: T,
@@ -75,6 +94,10 @@ pub enum Op<T: DType> {
         l_id: GraphTensorId,
         r_id: GraphTensorId,
         operator: BinaryOpType,
+    },
+    UnaryOp {
+        v_id: GraphTensorId,
+        operator: UnaryOpType,
     },
 }
 

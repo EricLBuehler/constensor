@@ -1,3 +1,5 @@
+use std::ops::Neg;
+
 #[cfg(feature = "cuda")]
 use crate::cuda_backend::CudaDevice;
 use crate::{
@@ -66,7 +68,25 @@ pub enum Device {
 }
 
 impl Device {
-    pub fn compile_and_run_graph<T: DType, S: Shape>(&self, graph: &[Op<T>]) -> Result<Storage<T>> {
+    pub fn compile_and_run_graph_unsigned<T: DType, S: Shape>(
+        &self,
+        graph: &[Op<T>],
+    ) -> Result<Storage<T>> {
+        match self {
+            #[cfg(feature = "cuda")]
+            Self::Cuda(cuda) => Ok(Storage::Cuda(
+                cuda.compile_and_run_graph_unsigned::<S, T>(graph)?,
+            )),
+            Self::Cpu => Ok(Storage::Cpu(
+                CpuDevice.compile_and_run_graph_unsigned::<S, T>(graph)?,
+            )),
+        }
+    }
+
+    pub fn compile_and_run_graph<T: DType + Neg<Output = T>, S: Shape>(
+        &self,
+        graph: &[Op<T>],
+    ) -> Result<Storage<T>> {
         match self {
             #[cfg(feature = "cuda")]
             Self::Cuda(cuda) => Ok(Storage::Cuda(cuda.compile_and_run_graph::<S, T>(graph)?)),
