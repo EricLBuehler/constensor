@@ -25,6 +25,8 @@ impl<T: DType> Graph<T> {
     pub(crate) fn add_op(&self, op: Op<T>) {
         self.data.write().unwrap().push(op);
     }
+    
+    #[must_use]
     pub(crate) fn next_id(&mut self) -> GraphTensorId {
         let next = GraphTensorId(*self.id.read().unwrap());
         *self.id.write().unwrap() += 1;
@@ -32,15 +34,15 @@ impl<T: DType> Graph<T> {
     }
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone)]
 pub enum Op<T: DType> {
     Fill {
         v: T,
-        id: GraphTensorId,
     },
-    Add {
+    BinaryOp {
         l_id: GraphTensorId,
         r_id: GraphTensorId,
+        operator: &'static str,
     },
 }
 

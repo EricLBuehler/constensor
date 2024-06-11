@@ -1,14 +1,48 @@
 use std::{
     marker::PhantomData,
-    ops::Add,
+    ops::{Add, Div},
     sync::{Arc, RwLock, RwLockReadGuard},
 };
 
 use crate::{
     device::Dev,
     graph::{Graph, GraphTensorId, Op},
-    DType, Shape,
+    DType, Shape, Tensor,
 };
+
+#[derive(Debug)]
+struct Name(usize);
+impl Name {
+    fn to_name(&self) -> String {
+        format!("v{}", self.0)
+    }
+}
+
+fn handle_node<T: DType>(
+    current_name: &mut usize,
+    header: &mut String,
+    op: &Op<T>,
+    graph: &[Op<T>],
+) -> String {
+    dbg!(&op);
+    match op {
+        Op::BinaryOp {
+            l_id,
+            r_id,
+            operator,
+        } => {
+            let l_name = handle_node(current_name, header, &graph[**l_id], graph);
+            let r_name = handle_node(current_name, header, &graph[**r_id], graph);
+            format!("({l_name} {operator} {r_name})")
+        }
+        Op::Fill { v } => {
+            *current_name += 1;
+            let name = Name(*current_name);
+            *header += &format!("T {} = {v:?};\n", name.to_name());
+            format!("({})", name.to_name())
+        }
+    }
+}
 
 /// A tensor representing an intermediary result of a graph. Performing operations
 /// on this tensor will not cause any computations.
@@ -20,10 +54,11 @@ pub struct GraphTensor<S: Shape, T: DType, D: Dev> {
 }
 
 impl<S: Shape, T: DType, D: Dev> GraphTensor<S, T, D> {
+    #[must_use]
     /// Create a tensor filled with some value.
     pub fn fill(mut graph: Graph<T>, v: T) -> Self {
         let id = graph.next_id();
-        graph.add_op(Op::Fill { v, id });
+        graph.add_op(Op::Fill { v });
         Self {
             id,
             graph: Arc::new(RwLock::new(graph)),
@@ -31,11 +66,13 @@ impl<S: Shape, T: DType, D: Dev> GraphTensor<S, T, D> {
         }
     }
 
+    #[must_use]
     /// Create a tensor filled with zeros.
     pub fn zeros(graph: Graph<T>) -> Self {
         Self::fill(graph, T::ZERO)
     }
 
+    #[must_use]
     /// Create a tensor filled with ones.
     pub fn ones(graph: Graph<T>) -> Self {
         Self::fill(graph, T::ONE)
@@ -50,20 +87,56 @@ impl<S: Shape, T: DType, D: Dev> GraphTensor<S, T, D> {
     pub fn id(&self) -> GraphTensorId {
         self.id
     }
-}
 
-impl<S: Shape, T: DType, D: Dev> Add for GraphTensor<S, T, D> {
-    type Output = GraphTensor<S, T, D>;
-    /// Add an elementwise addition operation to the graph.
-    fn add(self, rhs: Self) -> Self::Output {
-        self.graph.write().unwrap().add_op(Op::Add {
-            l_id: self.id(),
-            r_id: rhs.id(),
-        });
-        Self {
-            id: self.graph.write().unwrap().next_id(),
-            graph: self.graph.clone(),
-            _ghost: PhantomData,
-        }
+    #[must_use]
+    /// Convert this GraphTensor into a concrete tensor.
+    pub fn to_tensor(self) -> Tensor<S, T, D> {
+        let graph = self.graph.read().unwrap();
+        let nodes = &*graph.get_ops();
+
+        let mut header = "".to_string();
+        let body = handle_node(&mut 0, &mut header, nodes.last().unwrap(), nodes);
+        dbg!(&body);
+        dbg!(&header);
+
+        let template_kernel = format!(
+            r#"
+            template <typename T>
+            __device__ void fill_with(T *buf, const size_t numel) {{
+                for (unsigned int i = blockIdx.x * blockDim.x + threadIdx.x; i < numel;
+                    i += blockDim.x * gridDim.x) {{
+                    {header}
+                    buf[i] = {body};
+                }}
+            }}"#
+        );
+
+        dbg!(&template_kernel);
+
+        todo!()
     }
 }
+
+macro_rules! graphtensor_binop {
+    ($trait:ident, $fn_name:ident, $op:expr) => {
+        impl<S: Shape, T: DType, D: Dev> $trait for GraphTensor<S, T, D> {
+            type Output = GraphTensor<S, T, D>;
+            /// Add an elementwise addition operation to the graph.
+            fn $fn_name(self, rhs: Self) -> Self::Output {
+                self.graph.write().unwrap().add_op(Op::BinaryOp {
+                    l_id: self.id(),
+                    r_id: rhs.id(),
+                    operator: $op,
+                });
+                Self {
+                    id: self.graph.write().unwrap().next_id(),
+                    graph: self.graph.clone(),
+                    _ghost: PhantomData,
+                }
+            }
+        }
+    };
+}
+
+graphtensor_binop!(Add, add, "+");
+graphtensor_binop!(Div, div, "/");
