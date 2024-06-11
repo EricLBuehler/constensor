@@ -67,7 +67,6 @@ impl<S: Shape, T: DType, D: Dev> GraphTensor<S, T, D> {
     }
 }
 
-
 impl<S: Shape, T: DType + Neg<Output = T>, D: Dev> GraphTensor<S, T, D> {
     /// Convert this `GraphTensor` into a concrete `Tensor`.
     /// Only unsigned operations.

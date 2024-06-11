@@ -256,18 +256,26 @@ test_for_device_bfloat!(Cpu, cpu_tests_bfloat);
 #[cfg(all(feature = "cuda", feature = "bfloat"))]
 test_for_device_bfloat!(Cuda<0>, cuda_tests_bfloat);
 
-
-#[test]
-fn add_div_neg() {
-    let graph = Graph::empty();
-    let x = GraphTensor::<R2<3, 4>, f32, Cpu>::fill(graph.clone(), 1.0);
-    let y = GraphTensor::<R2<3, 4>, f32, Cpu>::fill(graph.clone(), 2.0);
-    let z = GraphTensor::<R2<3, 4>, f32, Cpu>::fill(graph.clone(), 4.0);
-    let c = x + -y;
-    let res = z / c;
-    let tensor = res.to_tensor().unwrap();
-    assert_eq!(
-        tensor.data().unwrap().to_vec(),
-        vec![vec![-4.0; 4]; 3],
-    );
+macro_rules! test_for_device_float_unary {
+    ($dev:ty, $name:ident) => {
+        mod $name {
+            use super::*;
+            
+            #[test]
+            fn add_div_neg() {
+                let graph = Graph::empty();
+                let x = GraphTensor::<R2<3, 4>, f32, $dev>::fill(graph.clone(), 1.0);
+                let y = GraphTensor::<R2<3, 4>, f32, $dev>::fill(graph.clone(), 2.0);
+                let z = GraphTensor::<R2<3, 4>, f32, $dev>::fill(graph.clone(), 4.0);
+                let c = x + -y;
+                let res = z / c;
+                let tensor = res.to_tensor().unwrap();
+                assert_eq!(tensor.data().unwrap().to_vec(), vec![vec![-4.0; 4]; 3],);
+            }
+        }
+    };
 }
+
+test_for_device_float_unary!(Cpu, cpu_tests_float_unary);
+#[cfg(feature = "cuda")]
+test_for_device_float_unary!(Cuda<0>, cuda_tests_float_unary);

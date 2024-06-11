@@ -1,7 +1,7 @@
 use std::{
     borrow::Cow,
     hash::{DefaultHasher, Hash, Hasher},
-    ops::Deref,
+    ops::{Deref, Neg},
     path::PathBuf,
     sync::Arc,
 };
@@ -96,6 +96,10 @@ fn handle_node<T: DType>(
             let r_name = handle_node(current_name, header, &graph[**r_id], graph);
             format!("({l_name} {} {r_name})", operator.to_c_op())
         }
+        Op::UnaryOp { v_id, operator } => {
+            let v_name = handle_node(current_name, header, &graph[**v_id], graph);
+            format!("({}{v_name})", operator.to_c_op())
+        }
         Op::Fill { v } => {
             *current_name += 1;
             let name = Name(*current_name);
@@ -146,16 +150,12 @@ fn cuda_include_dir() -> Option<PathBuf> {
         .find(|path| path.join("include").join("cuda.h").is_file())
 }
 
-impl BackendDevice for CudaDevice {
-    type Storage<X: DType> = CudaStorage<X>;
-
-    fn compile_and_run_graph<S: crate::Shape, T: DType>(
+impl CudaDevice {
+    fn run_graph<S: crate::Shape, T: DType>(
         &self,
-        nodes: &[crate::Op<T>],
-    ) -> Result<Self::Storage<T>> {
-        let mut header = "".to_string();
-        let body = handle_node(&mut 0, &mut header, nodes.last().unwrap(), nodes);
-
+        header: String,
+        body: String,
+    ) -> Result<CudaStorage<T>> {
         // Module name is based on hash of body and header
         let mut hasher = DefaultHasher::new();
         body.hash(&mut hasher);
@@ -213,5 +213,27 @@ impl BackendDevice for CudaDevice {
             slice: data,
             device: self.clone(),
         })
+    }
+}
+
+impl BackendDevice for CudaDevice {
+    type Storage<X: DType> = CudaStorage<X>;
+
+    fn compile_and_run_graph_unsigned<S: crate::Shape, T: DType>(
+        &self,
+        nodes: &[crate::Op<T>],
+    ) -> Result<Self::Storage<T>> {
+        let mut header = "".to_string();
+        let body = handle_node(&mut 0, &mut header, nodes.last().unwrap(), nodes);
+        self.run_graph::<S, T>(header, body)
+    }
+
+    fn compile_and_run_graph<S: crate::Shape, T: DType + Neg<Output = T>>(
+        &self,
+        nodes: &[crate::Op<T>],
+    ) -> Result<Self::Storage<T>> {
+        let mut header = "".to_string();
+        let body = handle_node(&mut 0, &mut header, nodes.last().unwrap(), nodes);
+        self.run_graph::<S, T>(header, body)
     }
 }
