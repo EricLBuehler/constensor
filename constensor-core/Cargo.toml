@@ -20,3 +20,7 @@ all = ["cuda", "half", "bfloat"]
 cuda = ["cudarc"]
 half = ["dep:half"]
 bfloat = ["dep:half"]
+
+[[example]]
+name = "hello_world"
+required-features = []
