@@ -1,7 +1,8 @@
 [default]
 extend-ignore-identifiers-re = [
     "arange",
-    "ARANGE"
+    "ARANGE",
+    "Arange",
 ]
 
 [files]
