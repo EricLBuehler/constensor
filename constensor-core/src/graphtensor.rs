@@ -56,7 +56,8 @@ impl<S: Shape, T: DType, D: Dev> GraphTensor<S, T, D> {
     }
 
     /// Convert this `GraphTensor` into a concrete `Tensor`.
-    /// Only unsigned operations.
+    /// Only unsigned operations may be used here. This will be enforced
+    /// by the dtype. There is no performance benefit to using this over `to_tensor`.
     pub fn to_tensor_unsigned(self) -> Result<Tensor<S, T, D>> {
         let graph = self.graph.read().unwrap();
         let nodes = &*graph.get_ops();
@@ -65,10 +66,24 @@ impl<S: Shape, T: DType, D: Dev> GraphTensor<S, T, D> {
         let storage = device.compile_and_run_graph_unsigned::<T, S>(nodes)?;
         Ok(from_storage(Arc::new(storage)))
     }
+
+    #[must_use]
+    /// Elementwise unary square root.
+    pub fn sqrt(self) -> GraphTensor<S, T, D> {
+        self.graph.write().unwrap().add_op(Op::UnaryOp {
+            v_id: self.id(),
+            operator: UnaryOpType::Sqrt,
+        });
+        Self {
+            id: self.graph.write().unwrap().next_id(),
+            graph: self.graph.clone(),
+            _ghost: PhantomData,
+        }
+    }
 }
 
 impl<S: Shape, T: DType + SignedDType, D: Dev> GraphTensor<S, T, D> {
-    /// Convert this `GraphTensor` into a concrete `Tensor`.
+    /// Convert this `GraphTensor` into a concrete `Tensor` for signed types only.
     pub fn to_tensor(self) -> Result<Tensor<S, T, D>> {
         let graph = self.graph.read().unwrap();
         let nodes = &*graph.get_ops();
@@ -80,6 +95,7 @@ impl<S: Shape, T: DType + SignedDType, D: Dev> GraphTensor<S, T, D> {
 }
 
 impl<const A: usize, T: DType, D: Dev> GraphTensor<R1<A>, T, D> {
+    #[must_use]
     /// A GraphTensor representing a vector ranging from `start` to `A` with step `step`.
     pub fn arange(mut graph: Graph<T>, start: T, step: T) -> Self {
         let id = graph.next_id();
@@ -96,6 +112,7 @@ macro_rules! graphtensor_binop {
     ($trait:ident, $fn_name:ident) => {
         impl<S: Shape, T: DType, D: Dev> $trait for GraphTensor<S, T, D> {
             type Output = GraphTensor<S, T, D>;
+            #[must_use]
             /// Add an elementwise operation to the graph.
             fn $fn_name(self, rhs: Self) -> Self::Output {
                 self.graph.write().unwrap().add_op(Op::BinaryOp {
@@ -120,6 +137,7 @@ graphtensor_binop!(Sub, sub);
 
 impl<S: Shape, T: DType + Neg<Output = T>, D: Dev> Neg for GraphTensor<S, T, D> {
     type Output = GraphTensor<S, T, D>;
+    #[must_use]
     /// Add an elementwise addition operation to the graph.
     fn neg(self) -> Self::Output {
         self.graph.write().unwrap().add_op(Op::UnaryOp {

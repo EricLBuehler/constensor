@@ -279,3 +279,33 @@ macro_rules! test_for_device_float_unary {
 test_for_device_float_unary!(Cpu, cpu_tests_float_unary);
 #[cfg(feature = "cuda")]
 test_for_device_float_unary!(Cuda<0>, cuda_tests_float_unary);
+
+macro_rules! test_for_device_sqrt {
+    ($dev:ty, $name:ident) => {
+        mod $name {
+            use super::*;
+
+            #[test]
+            fn sqrt_float() {
+                let graph = Graph::empty();
+                let x = GraphTensor::<R2<3, 4>, f32, $dev>::fill(graph.clone(), 4.0);
+                let res = x.sqrt();
+                let tensor = res.to_tensor().unwrap();
+                assert_eq!(tensor.data().unwrap().to_vec(), vec![vec![2.0; 4]; 3],);
+            }
+
+            #[test]
+            fn sqrt_int() {
+                let graph = Graph::empty();
+                let x = GraphTensor::<R2<3, 4>, i32, $dev>::fill(graph.clone(), 5);
+                let res = x.sqrt();
+                let tensor = res.to_tensor().unwrap();
+                assert_eq!(tensor.data().unwrap().to_vec(), vec![vec![2; 4]; 3],);
+            }
+        }
+    };
+}
+
+test_for_device_sqrt!(Cpu, cpu_tests_sqrt);
+#[cfg(feature = "cuda")]
+test_for_device_sqrt!(Cuda<0>, cuda_tests_sqrt);

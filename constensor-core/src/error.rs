@@ -3,6 +3,9 @@ pub enum Error {
     #[error(transparent)]
     Cuda(Box<dyn std::error::Error + Send + Sync>),
 
+    #[error("Message: {0}")]
+    Msg(String),
+
     #[error("{inner}\n{backtrace}")]
     WithBacktrace {
         inner: Box<Self>,

@@ -1,4 +1,5 @@
 use std::{
+    fmt::Display,
     ops::{Deref, Neg},
     sync::{Arc, RwLock, RwLockReadGuard},
 };
@@ -65,18 +66,21 @@ impl BinaryOpType {
 #[derive(PartialEq, Debug, Clone)]
 pub enum UnaryOpType {
     Neg,
+    Sqrt,
 }
 
 impl UnaryOpType {
-    pub fn to_c_op(&self) -> &'static str {
+    pub fn fill_in_c_op(&self, val: impl Display) -> String {
         match self {
-            Self::Neg => "-",
+            Self::Neg => format!("-{val}"),
+            Self::Sqrt => format!("sqrt({val})"),
         }
     }
 
-    pub fn to_closure<T: DType + Neg<Output = T>>(&self) -> impl Fn(T) -> T {
+    pub fn to_closure<T: DType + Neg<Output = T>>(&self) -> impl Fn(T) -> Option<T> {
         match self {
-            Self::Neg => |x: T| -x,
+            Self::Neg => |x: T| Some(-x),
+            Self::Sqrt => |x: T| x.sqrt(),
         }
     }
 }
