@@ -80,6 +80,7 @@ impl Name {
     }
 }
 
+/// Can assume that the type T is available.
 fn handle_node<T: DType>(
     current_name: &mut usize,
     header: &mut String,

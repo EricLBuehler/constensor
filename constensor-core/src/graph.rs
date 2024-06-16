@@ -70,10 +70,11 @@ pub enum UnaryOpType {
 }
 
 impl UnaryOpType {
+    /// Can assume that the type T is available.
     pub fn fill_in_c_op(&self, val: impl Display) -> String {
         match self {
             Self::Neg => format!("-{val}"),
-            Self::Sqrt => format!("sqrt({val})"),
+            Self::Sqrt => format!("static_cast<T>( sqrt( static_cast<double>({val}) ) )"),
         }
     }
 
