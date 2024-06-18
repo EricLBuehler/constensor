@@ -15,11 +15,12 @@ thiserror.workspace = true
 half = { workspace = true, optional = true }
 
 [features]
-default = ["all"]
+default = []
 all = ["cuda", "half", "bfloat"]
 cuda = ["cudarc"]
 half = ["dep:half"]
 bfloat = ["dep:half"]
+slow_integral_fma_cuda = []
 
 [[example]]
 name = "hello_world"
