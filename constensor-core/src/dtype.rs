@@ -94,51 +94,40 @@ sqrt_integral!(u32);
 sqrt_integral!(i32);
 sqrt_integral!(i64);
 
+pub trait DTypeOps:
+    Copy + Add<Output = Self> + Div<Output = Self> + Sub<Output = Self> + Mul<Output = Self> + Sqrtable
+{
+}
+
 #[cfg(feature = "cuda")]
 /// Marker trait for tensor datatypes.
-pub trait DType:
-    Debug
-    + DeviceRepr
-    + Clone
-    + Copy
-    + Add<Output = Self>
-    + Div<Output = Self>
-    + Sub<Output = Self>
-    + Mul<Output = Self>
-    + Sqrtable
-{
+pub trait DType: Debug + DeviceRepr + Clone + DTypeOps {
     const ZERO: Self;
     const ONE: Self;
     const NAME: &'static str;
     const C_NAME: &'static str;
     const C_DEP: Option<&'static str>;
 
+    /// Offset i by start and step using the formula `i*step + start`
     fn offset(i: usize, start: Self, step: Self) -> Self;
 }
 
 #[cfg(not(feature = "cuda"))]
 /// Marker trait for tensor datatypes.
-pub trait DType:
-    Debug
-    + Clone
-    + Copy
-    + Add<Output = Self>
-    + Div<Output = Self>
-    + Sub<Output = Self>
-    + Mul<Output = Self>
-    + Sqrtable
-{
+pub trait DType: Debug + Clone + DTypeOps {
     const ZERO: Self;
     const ONE: Self;
     const NAME: &'static str;
     const C_NAME: &'static str;
     const C_DEP: Option<&'static str>;
 
+    /// Offset i by start and step using the formula `i*step + start`
     fn offset(i: usize, start: Self, step: Self) -> Self;
 }
 
 macro_rules! dtype {
     ($rt:ident, $zero:expr, $one:expr, $repr:expr, $c_repr:expr) => {
+        impl DTypeOps for $rt {}
         impl DType for $rt {
             const ZERO: $rt = $zero;
             const ONE: $rt = $one;
@@ -161,6 +150,8 @@ dtype!(f32, 0f32, 1f32, "f32", "float");
 dtype!(f64, 0f64, 1f64, "f64", "double");
 
 #[cfg(feature = "half")]
+impl DTypeOps for f16 {}
+#[cfg(feature = "half")]
 impl DType for f16 {
     const ZERO: f16 = f16::from_f32_const(0.0);
     const ONE: f16 = f16::from_f32_const(1.0);
@@ -172,6 +163,8 @@ impl DType for f16 {
         f16::from_f64_const(i as f64) * step + start
     }
 }
+#[cfg(feature = "bfloat")]
+impl DTypeOps for bf16 {}
 #[cfg(feature = "bfloat")]
 impl DType for bf16 {
     const ZERO: bf16 = bf16::from_f32_const(0.0);
