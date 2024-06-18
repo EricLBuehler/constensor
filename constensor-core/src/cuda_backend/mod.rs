@@ -153,7 +153,7 @@ fn handle_node<T: DType>(
             );
             #[cfg(feature = "slow_integral_fma_cuda")]
             if T::INTEGRAL {
-                use crate::Graph::BinaryOpType;
+                use crate::graph::BinaryOpType;
                 let mul_op = BinaryOpType::Mul.to_c_op();
                 let add_op = BinaryOpType::Add.to_c_op();
                 format!("({a_name} {mul_op} {b_name} {add_op} {c_name})")
