@@ -1,8 +1,9 @@
 use std::{
     borrow::Cow,
+    fs,
     hash::{DefaultHasher, Hash, Hasher},
     ops::Deref,
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::Arc,
 };
 mod error;
@@ -199,6 +200,22 @@ fn cuda_include_dir() -> Option<PathBuf> {
         .find(|path| path.join("include").join("cuda.h").is_file())
 }
 
+fn compile_ptx(template_kernel: String) -> Result<Ptx> {
+    cudarc::nvrtc::compile_ptx_with_opts(
+        template_kernel,
+        CompileOptions {
+            use_fast_math: Some(true),
+            include_paths: vec![cuda_include_dir()
+                .unwrap()
+                .join("include")
+                .display()
+                .to_string()],
+            ..Default::default()
+        },
+    )
+    .w()
+}
+
 impl CudaDevice {
     fn run_graph<S: crate::Shape, T: DType>(
         &self,
@@ -236,19 +253,27 @@ impl CudaDevice {
             T::C_NAME,
         );
 
-        let ptx = cudarc::nvrtc::compile_ptx_with_opts(
-            template_kernel,
-            CompileOptions {
-                use_fast_math: Some(true),
-                include_paths: vec![cuda_include_dir()
-                    .unwrap()
-                    .join("include")
-                    .display()
-                    .to_string()],
-                ..Default::default()
-            },
-        )
-        .w()?;
+        let ptx = if let Some(home) = dirs::home_dir() {
+            let path = format!("{}/.cache/constensor/ptx/{module_name}.ptx", home.display());
+            if Path::new(&path).exists() {
+                match fs::read_to_string(path) {
+                    Ok(ptx) => Ptx::from_src(ptx),
+                    Err(_) => compile_ptx(template_kernel)?,
+                }
+            } else {
+                compile_ptx(template_kernel)?
+            }
+        } else {
+            compile_ptx(template_kernel)?
+        };
+
+        let ptx_str = ptx.to_src();
+        if let Some(home) = dirs::home_dir() {
+            let _ = fs::write(
+                format!("{}/.cache/constensor/ptx/{module_name}.ptx", home.display()),
+                ptx_str,
+            );
+        }
 
         let n_elems = S::element_count();
         let data = unsafe { self.device.alloc::<T>(n_elems) }.w()?;
