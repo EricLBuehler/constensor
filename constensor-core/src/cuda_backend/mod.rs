@@ -14,6 +14,7 @@ use error::{CudaError, WrapErr};
 
 use crate::{
     cpu_storage::CpuStorage,
+    graph::GraphTensorId,
     storage::{BackendDevice, BackendStorage},
     DType, Op, Result, SignedDType,
 };
@@ -93,12 +94,27 @@ fn handle_node<T: DType>(
             r_id,
             operator,
         } => {
-            let l_name = handle_node(current_name, header, &graph[**l_id], graph);
-            let r_name = handle_node(current_name, header, &graph[**r_id], graph);
+            let l_name = handle_node(
+                current_name,
+                header,
+                &graph[<&GraphTensorId as Into<usize>>::into(l_id)],
+                graph,
+            );
+            let r_name = handle_node(
+                current_name,
+                header,
+                &graph[<&GraphTensorId as Into<usize>>::into(r_id)],
+                graph,
+            );
             format!("({l_name} {} {r_name})", operator.to_c_op())
         }
         Op::UnaryOp { v_id, operator } => {
-            let v_name = handle_node(current_name, header, &graph[**v_id], graph);
+            let v_name = handle_node(
+                current_name,
+                header,
+                &graph[<&GraphTensorId as Into<usize>>::into(v_id)],
+                graph,
+            );
             operator.fill_in_c_op(v_name)
         }
         Op::Fill { v } => {
@@ -116,6 +132,28 @@ fn handle_node<T: DType>(
             );
             format!("({})", name.to_name())
         }
+        Op::FusedMulAdd { a_id, b_id, c_id } => {
+            let a_name = handle_node(
+                current_name,
+                header,
+                &graph[<&GraphTensorId as Into<usize>>::into(a_id)],
+                graph,
+            );
+            let b_name = handle_node(
+                current_name,
+                header,
+                &graph[<&GraphTensorId as Into<usize>>::into(b_id)],
+                graph,
+            );
+            let c_name = handle_node(
+                current_name,
+                header,
+                &graph[<&GraphTensorId as Into<usize>>::into(c_id)],
+                graph,
+            );
+            format!("( static_cast<T>(fma(static_cast<double>({a_name}), static_cast<double>({b_name}), static_cast<double>({c_name}))))")
+        }
+        Op::NoOp => unreachable!("no-op ops should never be reached."),
     }
 }
 
@@ -220,7 +258,7 @@ impl CudaDevice {
 impl BackendDevice for CudaDevice {
     type Storage<X: DType> = CudaStorage<X>;
 
-    fn compile_and_run_graph_unsigned<S: crate::Shape, T: DType>(
+    fn compile_and_run_graph<S: crate::Shape, T: DType>(
         &self,
         nodes: &[crate::Op<T>],
     ) -> Result<Self::Storage<T>> {
@@ -229,7 +267,7 @@ impl BackendDevice for CudaDevice {
         self.run_graph::<S, T>(header, body)
     }
 
-    fn compile_and_run_graph<S: crate::Shape, T: DType + SignedDType>(
+    fn compile_and_run_graph_signed<S: crate::Shape, T: DType + SignedDType>(
         &self,
         nodes: &[crate::Op<T>],
     ) -> Result<Self::Storage<T>> {

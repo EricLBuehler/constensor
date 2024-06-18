@@ -52,18 +52,18 @@ impl<S: Shape, T: DType, D: Dev> GraphTensor<S, T, D> {
 
     /// Get the graph tensor ID.
     pub fn id(&self) -> GraphTensorId {
-        self.id
+        self.id.clone()
     }
 
     /// Convert this `GraphTensor` into a concrete `Tensor`.
     /// Only unsigned operations may be used here. This will be enforced
     /// by the dtype. There is no performance benefit to using this over `to_tensor`.
-    pub fn to_tensor_unsigned(self) -> Result<Tensor<S, T, D>> {
+    pub fn to_tensor(self) -> Result<Tensor<S, T, D>> {
         let graph = self.graph.read().unwrap();
         let nodes = &*graph.get_ops();
 
         let device = D::resolve()?;
-        let storage = device.compile_and_run_graph_unsigned::<T, S>(nodes)?;
+        let storage = device.compile_and_run_graph::<T, S>(nodes)?;
         Ok(from_storage(Arc::new(storage)))
     }
 
@@ -84,12 +84,13 @@ impl<S: Shape, T: DType, D: Dev> GraphTensor<S, T, D> {
 
 impl<S: Shape, T: DType + SignedDType, D: Dev> GraphTensor<S, T, D> {
     /// Convert this `GraphTensor` into a concrete `Tensor` for signed types only.
-    pub fn to_tensor(self) -> Result<Tensor<S, T, D>> {
+    pub fn to_tensor_signed(self) -> Result<Tensor<S, T, D>> {
+        self.graph.write().unwrap().optimize();
         let graph = self.graph.read().unwrap();
         let nodes = &*graph.get_ops();
 
         let device = D::resolve()?;
-        let storage = device.compile_and_run_graph::<T, S>(nodes)?;
+        let storage = device.compile_and_run_graph_signed::<T, S>(nodes)?;
         Ok(from_storage(Arc::new(storage)))
     }
 }

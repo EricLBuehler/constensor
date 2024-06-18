@@ -27,12 +27,12 @@ pub trait BackendStorage<T: DType> {
 pub trait BackendDevice {
     type Storage<X: DType>: BackendStorage<X>;
 
-    fn compile_and_run_graph<S: Shape, T: DType + SignedDType>(
+    fn compile_and_run_graph_signed<S: Shape, T: DType + SignedDType>(
         &self,
         graph: &[Op<T>],
     ) -> Result<Self::Storage<T>>;
 
-    fn compile_and_run_graph_unsigned<S: Shape, T: DType>(
+    fn compile_and_run_graph<S: Shape, T: DType>(
         &self,
         graph: &[Op<T>],
     ) -> Result<Self::Storage<T>>;

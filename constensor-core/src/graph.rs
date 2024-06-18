@@ -1,6 +1,8 @@
 use std::{
+    cell::Cell,
     fmt::Display,
-    ops::{Deref, Neg},
+    ops::Neg,
+    rc::Rc,
     sync::{Arc, RwLock, RwLockReadGuard},
 };
 
@@ -23,15 +25,94 @@ impl<T: DType> Graph<T> {
     pub fn get_ops(&self) -> RwLockReadGuard<Vec<Op<T>>> {
         self.data.read().unwrap()
     }
+
     pub(crate) fn add_op(&self, op: Op<T>) {
         self.data.write().unwrap().push(op);
     }
 
     #[must_use]
     pub(crate) fn next_id(&mut self) -> GraphTensorId {
-        let next = GraphTensorId(*self.id.read().unwrap());
+        let next = GraphTensorId::from(*self.id.read().unwrap());
         *self.id.write().unwrap() += 1;
         next
+    }
+
+    /// Optimize by looking for mul-add pairs, convert to FMA
+    fn optimize_fma(&mut self) {
+        let ops = self.data.write().unwrap().clone();
+        let mut new_ops = ops.clone();
+
+        // This contains the indices of the first of the pair.
+        for (x_id, x) in ops.iter().enumerate() {
+            if let Op::BinaryOp {
+                l_id: a_id,
+                r_id: b_id,
+                operator: BinaryOpType::Mul,
+            } = x
+            {
+                // Check if next op uses this
+                if let Op::BinaryOp {
+                    l_id: l_y,
+                    r_id: r_y,
+                    operator: BinaryOpType::Add,
+                } = &ops[x_id + 1]
+                {
+                    let y_id = x_id + 1;
+                    if <&GraphTensorId as Into<usize>>::into(l_y) == x_id
+                        || <&GraphTensorId as Into<usize>>::into(r_y) == x_id
+                    {
+                        // Want to see what is being added to the result of the mul
+                        let rhs_add = if <&GraphTensorId as Into<usize>>::into(l_y) == x_id {
+                            r_y
+                        } else {
+                            l_y
+                        };
+                        new_ops[y_id] = Op::FusedMulAdd {
+                            a_id: GraphTensorId::from(a_id.0.get()),
+                            b_id: GraphTensorId::from(b_id.0.get()),
+                            c_id: GraphTensorId::from(rhs_add.0.get()),
+                        };
+                        new_ops[x_id] = Op::NoOp;
+
+                        // Look for ops which actually use this one
+                        for user in ops.iter() {
+                            let ids = match user {
+                                Op::Arange { start: _, step: _ } => vec![],
+                                Op::BinaryOp {
+                                    l_id,
+                                    r_id,
+                                    operator: _,
+                                } => vec![l_id, r_id],
+                                Op::Fill { v: _ } => vec![],
+                                Op::UnaryOp { v_id, operator: _ } => vec![v_id],
+                                Op::FusedMulAdd { a_id, b_id, c_id } => {
+                                    vec![a_id, b_id, c_id]
+                                }
+                                Op::NoOp => vec![],
+                            };
+                            let used_ids = ids
+                                .into_iter()
+                                .filter(|id| <&GraphTensorId as Into<usize>>::into(id) != y_id)
+                                .collect::<Vec<_>>();
+                            if !used_ids.is_empty() {
+                                for id in used_ids {
+                                    // Tell the ops which use the result of the fma to source from there
+                                    id.0.set(y_id);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        *self.data.write().unwrap() = new_ops;
+    }
+
+    /// Apply the following optimizations
+    /// - Fuse mul,add
+    pub(crate) fn optimize(&mut self) {
+        self.optimize_fma();
     }
 }
 
@@ -104,21 +185,33 @@ pub enum Op<T: DType> {
         v_id: GraphTensorId,
         operator: UnaryOpType,
     },
+    /// a * b + c
+    FusedMulAdd {
+        a_id: GraphTensorId,
+        b_id: GraphTensorId,
+        c_id: GraphTensorId,
+    },
+    NoOp,
 }
 
-#[derive(Clone, Copy, PartialEq, Debug)]
-pub struct GraphTensorId(usize);
+#[derive(Clone, PartialEq, Debug)]
+/// Graph tensor IDs can be cloned.
+pub struct GraphTensorId(Rc<Cell<usize>>);
 
-impl Deref for GraphTensorId {
-    type Target = usize;
+impl From<GraphTensorId> for usize {
+    fn from(value: GraphTensorId) -> Self {
+        value.0.get()
+    }
+}
 
-    fn deref(&self) -> &Self::Target {
-        &self.0
+impl From<&GraphTensorId> for usize {
+    fn from(value: &GraphTensorId) -> Self {
+        value.0.get()
     }
 }
 
 impl From<usize> for GraphTensorId {
     fn from(value: usize) -> Self {
-        Self(value)
+        Self(Rc::new(Cell::new(value)))
     }
 }
