@@ -16,7 +16,7 @@ half = { workspace = true, optional = true }
 dirs = "5.0.1"
 
 [features]
-default = []
+default = ["all"]
 all = ["cuda", "half", "bfloat"]
 cuda = ["cudarc"]
 half = ["dep:half"]

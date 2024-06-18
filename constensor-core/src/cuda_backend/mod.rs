@@ -269,10 +269,12 @@ impl CudaDevice {
 
         let ptx_str = ptx.to_src();
         if let Some(home) = dirs::home_dir() {
-            let _ = fs::write(
-                format!("{}/.cache/constensor/ptx/{module_name}.ptx", home.display()),
-                ptx_str,
-            );
+            let path = format!("{}/.cache/constensor/ptx/{module_name}.ptx", home.display());
+            let path = Path::new(&path);
+            if let Some(parent) = path.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            fs::write(path, ptx_str)?;
         }
 
         let n_elems = S::element_count();

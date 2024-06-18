@@ -11,6 +11,9 @@ pub enum Error {
         inner: Box<Self>,
         backtrace: Box<std::backtrace::Backtrace>,
     },
+
+    #[error("IO error: {0}")]
+    IoError(String),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -26,5 +29,11 @@ impl Error {
                 backtrace: Box::new(backtrace),
             },
         }
+    }
+}
+
+impl From<std::io::Error> for Error {
+    fn from(value: std::io::Error) -> Self {
+        Error::IoError(value.to_string())
     }
 }
