@@ -107,6 +107,7 @@ pub trait DType: Debug + DeviceRepr + Clone + DTypeOps {
     const NAME: &'static str;
     const C_NAME: &'static str;
     const C_DEP: Option<&'static str>;
+    const INTEGRAL: bool;
 
     /// Offset i by start and step using the formula `i*step + start`
     fn offset(i: usize, start: Self, step: Self) -> Self;
@@ -120,13 +121,14 @@ pub trait DType: Debug + Clone + DTypeOps {
     const NAME: &'static str;
     const C_NAME: &'static str;
     const C_DEP: Option<&'static str>;
+    const INTEGRAL: bool;
 
     /// Offset i by start and step using the formula `i*step + start`
     fn offset(i: usize, start: Self, step: Self) -> Self;
 }
 
 macro_rules! dtype {
-    ($rt:ident, $zero:expr, $one:expr, $repr:expr, $c_repr:expr) => {
+    ($rt:ident, $zero:expr, $one:expr, $repr:expr, $c_repr:expr, $integral:expr) => {
         impl DTypeOps for $rt {}
         impl DType for $rt {
             const ZERO: $rt = $zero;
@@ -134,6 +136,7 @@ macro_rules! dtype {
             const NAME: &'static str = $repr;
             const C_NAME: &'static str = $c_repr;
             const C_DEP: Option<&'static str> = None;
+            const INTEGRAL: bool = $integral;
 
             fn offset(i: usize, start: Self, step: Self) -> Self {
                 (i as $rt) * step + start
@@ -142,12 +145,12 @@ macro_rules! dtype {
     };
 }
 
-dtype!(u8, 0u8, 1u8, "u8", "uint8_t");
-dtype!(u32, 0u32, 1u32, "u32", "uint32_t");
-dtype!(i32, 0i32, 1i32, "i32", "int");
-dtype!(i64, 0i64, 1i64, "i64", "int64_t");
-dtype!(f32, 0f32, 1f32, "f32", "float");
-dtype!(f64, 0f64, 1f64, "f64", "double");
+dtype!(u8, 0u8, 1u8, "u8", "uint8_t", true);
+dtype!(u32, 0u32, 1u32, "u32", "uint32_t", true);
+dtype!(i32, 0i32, 1i32, "i32", "int", true);
+dtype!(i64, 0i64, 1i64, "i64", "int64_t", true);
+dtype!(f32, 0f32, 1f32, "f32", "float", false);
+dtype!(f64, 0f64, 1f64, "f64", "double", false);
 
 #[cfg(feature = "half")]
 impl DTypeOps for f16 {}
@@ -158,6 +161,7 @@ impl DType for f16 {
     const NAME: &'static str = "f16";
     const C_NAME: &'static str = "__half";
     const C_DEP: Option<&'static str> = Some("#include \"cuda_fp16.h\"");
+    const INTEGRAL: bool = false;
 
     fn offset(i: usize, start: Self, step: Self) -> Self {
         f16::from_f64_const(i as f64) * step + start
@@ -172,6 +176,7 @@ impl DType for bf16 {
     const NAME: &'static str = "bf16";
     const C_NAME: &'static str = "__nv_bfloat16";
     const C_DEP: Option<&'static str> = Some("#include \"cuda_bf16.h\"");
+    const INTEGRAL: bool = false;
 
     fn offset(i: usize, start: Self, step: Self) -> Self {
         bf16::from_f64_const(i as f64) * step + start

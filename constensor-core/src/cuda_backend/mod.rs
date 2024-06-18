@@ -14,7 +14,7 @@ use error::{CudaError, WrapErr};
 
 use crate::{
     cpu_storage::CpuStorage,
-    graph::GraphTensorId,
+    graph::{BinaryOpType, GraphTensorId},
     storage::{BackendDevice, BackendStorage},
     DType, Op, Result, SignedDType,
 };
@@ -151,7 +151,13 @@ fn handle_node<T: DType>(
                 &graph[<&GraphTensorId as Into<usize>>::into(c_id)],
                 graph,
             );
-            format!("( static_cast<T>(fma(static_cast<double>({a_name}), static_cast<double>({b_name}), static_cast<double>({c_name}))))")
+            if T::INTEGRAL {
+                let mul_op = BinaryOpType::Mul.to_c_op();
+                let add_op = BinaryOpType::Add.to_c_op();
+                format!("({a_name} {mul_op} {b_name} {add_op} {c_name})")
+            } else {
+                format!("( static_cast<T>(fma(static_cast<double>({a_name}), static_cast<double>({b_name}), static_cast<double>({c_name}))))")
+            }
         }
         Op::NoOp => unreachable!("no-op ops should never be reached."),
     }
