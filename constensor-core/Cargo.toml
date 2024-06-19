@@ -14,6 +14,7 @@ cudarc = { workspace = true, optional = true }
 thiserror.workspace = true
 half = { workspace = true, optional = true }
 dirs = "5.0.1"
+rayon = "1.10.0"
 
 [features]
 default = []

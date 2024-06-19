@@ -1,5 +1,7 @@
 use std::borrow::Cow;
 
+use rayon::iter::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator};
+
 use crate::{
     graph::{BinaryOpType, GraphTensorId},
     storage::{BackendDevice, BackendStorage},
@@ -30,9 +32,7 @@ fn evaluate_node<T: DType, S: Shape>(op: &Op<T>, graph: &[Op<T>]) -> Vec<T> {
             let r =
                 evaluate_node::<T, S>(&graph[<&GraphTensorId as Into<usize>>::into(r_id)], graph);
             let op = operator.to_closure();
-            for (x, y) in l.iter_mut().zip(r) {
-                *x = op(*x, y);
-            }
+            l.par_iter_mut().zip(r).for_each(|(x, y)| *x = op(*x, y));
             l
         }
         Op::Fill { v } => {
@@ -60,9 +60,10 @@ fn evaluate_node<T: DType, S: Shape>(op: &Op<T>, graph: &[Op<T>]) -> Vec<T> {
                 evaluate_node::<T, S>(&graph[<&GraphTensorId as Into<usize>>::into(c_id)], graph);
             let mul_op = BinaryOpType::Mul.to_closure::<T>();
             let add_op = BinaryOpType::Add.to_closure::<T>();
-            for (a, (b, c)) in a.iter_mut().zip(b.iter().zip(c)) {
-                *a = add_op(mul_op(*a, *b), c);
-            }
+            a.par_iter_mut()
+                .zip(b)
+                .zip(c)
+                .for_each(|((a, b), c)| *a = add_op(mul_op(*a, b), c));
             a
         }
         Op::NoOp => unreachable!("no-op ops should never be reached."),
@@ -80,9 +81,7 @@ fn evaluate_node_signed<T: DType + SignedDType, S: Shape>(
                 graph,
             )?;
             let op = operator.to_closure();
-            for x in v.iter_mut() {
-                *x = op(*x);
-            }
+            v.par_iter_mut().for_each(|x| *x = op(*x));
             Ok(v)
         }
         Op::BinaryOp {
@@ -99,9 +98,7 @@ fn evaluate_node_signed<T: DType + SignedDType, S: Shape>(
                 graph,
             )?;
             let op = operator.to_closure();
-            for (x, y) in l.iter_mut().zip(r) {
-                *x = op(*x, y);
-            }
+            l.par_iter_mut().zip(r).for_each(|(x, y)| *x = op(*x, y));
             Ok(l)
         }
         other => Ok(evaluate_node::<T, S>(other, graph)),

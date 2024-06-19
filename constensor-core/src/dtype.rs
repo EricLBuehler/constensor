@@ -96,7 +96,7 @@ pub trait DTypeOps:
 
 #[cfg(feature = "cuda")]
 /// Marker trait for tensor datatypes.
-pub trait DType: Debug + DeviceRepr + Clone + DTypeOps {
+pub trait DType: Debug + DeviceRepr + Clone + DTypeOps + Send + Sync {
     const ZERO: Self;
     const ONE: Self;
     const NAME: &'static str;
@@ -110,7 +110,7 @@ pub trait DType: Debug + DeviceRepr + Clone + DTypeOps {
 
 #[cfg(not(feature = "cuda"))]
 /// Marker trait for tensor datatypes.
-pub trait DType: Debug + Clone + DTypeOps {
+pub trait DType: Debug + Clone + DTypeOps + Send + Sync {
     const ZERO: Self;
     const ONE: Self;
     const NAME: &'static str;
