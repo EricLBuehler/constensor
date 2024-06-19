@@ -159,9 +159,9 @@ impl UnaryOpType {
         }
     }
 
-    pub fn to_closure<T: DType + Neg<Output = T>>(&self) -> impl Fn(T) -> Option<T> {
+    pub fn to_closure<T: DType + Neg<Output = T>>(&self) -> impl Fn(T) -> T {
         match self {
-            Self::Neg => |x: T| Some(-x),
+            Self::Neg => |x: T| -x,
             Self::Sqrt => |x: T| x.sqrt(),
         }
     }

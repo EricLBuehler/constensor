@@ -24,40 +24,39 @@ impl SignedDType for bf16 {}
 impl SignedDType for f16 {}
 
 /// Type which can be square-rooted.
-/// The only condition for None as a return type is if Self
-/// is integral and `self < 0`.
+/// If self<0 and Self is integral, then te output is 0
 pub trait Sqrtable {
-    fn sqrt(&self) -> Option<Self>
+    fn sqrt(&self) -> Self
     where
         Self: Sized;
 }
 
 impl Sqrtable for f32 {
-    fn sqrt(&self) -> Option<Self>
+    fn sqrt(&self) -> Self
     where
         Self: Sized,
     {
-        Some(f32::sqrt(*self))
+        f32::sqrt(*self)
     }
 }
 
 impl Sqrtable for f64 {
-    fn sqrt(&self) -> Option<Self>
+    fn sqrt(&self) -> Self
     where
         Self: Sized,
     {
-        Some(f64::sqrt(*self))
+        f64::sqrt(*self)
     }
 }
 
 #[cfg(feature = "bfloat")]
 
 impl Sqrtable for bf16 {
-    fn sqrt(&self) -> Option<Self>
+    fn sqrt(&self) -> Self
     where
         Self: Sized,
     {
-        Some(bf16::from_f64_const(self.to_f64_const().sqrt()))
+        bf16::from_f64_const(self.to_f64_const().sqrt())
     }
 }
 
@@ -68,22 +67,18 @@ impl Sqrtable for f16 {
     where
         Self: Sized,
     {
-        Some(f16::from_f64_const(self.to_f64_const().sqrt()))
+        f16::from_f64_const(self.to_f64_const().sqrt())
     }
 }
 
 macro_rules! sqrt_integral {
     ($t:ty) => {
         impl Sqrtable for $t {
-            fn sqrt(&self) -> Option<Self>
+            fn sqrt(&self) -> Self
             where
                 Self: Sized,
             {
-                if *self < (0 as $t) {
-                    None
-                } else {
-                    Some(self.isqrt())
-                }
+                (*self as f64).sqrt() as $t
             }
         }
     };
