@@ -25,16 +25,15 @@ fn evaluate_node<T: DType, S: Shape>(op: &Op<T>, graph: &[Op<T>]) -> Vec<T> {
             r_id,
             operator,
         } => {
-            let l =
+            let mut l =
                 evaluate_node::<T, S>(&graph[<&GraphTensorId as Into<usize>>::into(l_id)], graph);
             let r =
                 evaluate_node::<T, S>(&graph[<&GraphTensorId as Into<usize>>::into(r_id)], graph);
-            let mut out = vec![T::ZERO; l.len()];
             let op = operator.to_closure();
-            for (i, (x, y)) in l.iter().zip(r).enumerate() {
-                out[i] = op(*x, y);
+            for (x, y) in l.iter_mut().zip(r) {
+                *x = op(*x, y);
             }
-            out
+            l
         }
         Op::Fill { v } => {
             vec![*v; S::element_count()]
@@ -53,19 +52,18 @@ fn evaluate_node<T: DType, S: Shape>(op: &Op<T>, graph: &[Op<T>]) -> Vec<T> {
             unreachable!()
         }
         Op::FusedMulAdd { a_id, b_id, c_id } => {
-            let a =
+            let mut a =
                 evaluate_node::<T, S>(&graph[<&GraphTensorId as Into<usize>>::into(a_id)], graph);
             let b =
                 evaluate_node::<T, S>(&graph[<&GraphTensorId as Into<usize>>::into(b_id)], graph);
             let c =
                 evaluate_node::<T, S>(&graph[<&GraphTensorId as Into<usize>>::into(c_id)], graph);
-            let mut out = vec![T::ZERO; a.len()];
             let mul_op = BinaryOpType::Mul.to_closure::<T>();
             let add_op = BinaryOpType::Add.to_closure::<T>();
-            for (i, (a, (b, c))) in a.iter().zip(b.iter().zip(c)).enumerate() {
-                out[i] = add_op(mul_op(*a, *b), c);
+            for (a, (b, c)) in a.iter_mut().zip(b.iter().zip(c)) {
+                *a = add_op(mul_op(*a, *b), c);
             }
-            out
+            a
         }
         Op::NoOp => unreachable!("no-op ops should never be reached."),
     }
@@ -77,23 +75,22 @@ fn evaluate_node_signed<T: DType + SignedDType, S: Shape>(
 ) -> Result<Vec<T>> {
     match op {
         Op::UnaryOp { v_id, operator } => {
-            let v_name = evaluate_node_signed::<T, S>(
+            let mut v = evaluate_node_signed::<T, S>(
                 &graph[<&GraphTensorId as Into<usize>>::into(v_id)],
                 graph,
             )?;
-            let mut out = vec![T::ZERO; v_name.len()];
             let op = operator.to_closure();
-            for (i, x) in v_name.iter().enumerate() {
-                out[i] = op(*x).ok_or(Error::Msg("`sqrt` value was negative".to_string()))?;
+            for x in v.iter_mut() {
+                *x = op(*x).ok_or(Error::Msg("`sqrt` value was negative".to_string()))?;
             }
-            Ok(out)
+            Ok(v)
         }
         Op::BinaryOp {
             l_id,
             r_id,
             operator,
         } => {
-            let l = evaluate_node_signed::<T, S>(
+            let mut l = evaluate_node_signed::<T, S>(
                 &graph[<&GraphTensorId as Into<usize>>::into(l_id)],
                 graph,
             )?;
@@ -101,12 +98,11 @@ fn evaluate_node_signed<T: DType + SignedDType, S: Shape>(
                 &graph[<&GraphTensorId as Into<usize>>::into(r_id)],
                 graph,
             )?;
-            let mut out = vec![T::ZERO; l.len()];
             let op = operator.to_closure();
-            for (i, (x, y)) in l.iter().zip(r).enumerate() {
-                out[i] = op(*x, y);
+            for (x, y) in l.iter_mut().zip(r) {
+                *x = op(*x, y);
             }
-            Ok(out)
+            Ok(l)
         }
         other => Ok(evaluate_node::<T, S>(other, graph)),
     }
