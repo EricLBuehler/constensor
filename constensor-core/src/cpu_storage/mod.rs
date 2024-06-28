@@ -31,8 +31,7 @@ fn evaluate_node<T: DType, S: Shape>(op: &Op<T>, graph: &[Op<T>]) -> Vec<T> {
                 evaluate_node::<T, S>(&graph[<&GraphTensorId as Into<usize>>::into(l_id)], graph);
             let r =
                 evaluate_node::<T, S>(&graph[<&GraphTensorId as Into<usize>>::into(r_id)], graph);
-            let op = operator.as_closure();
-            l.par_iter_mut().zip(r).for_each(|(x, y)| *x = op(*x, y));
+            T::binary_simd_op(&mut l, r, *operator);
             l
         }
         Op::Fill { v } => {
@@ -99,6 +98,27 @@ fn evaluate_node_signed<T: DType + SignedDType, S: Shape>(
             )?;
             T::binary_simd_op(&mut l, r, *operator);
             Ok(l)
+        }
+        Op::FusedMulAdd { a_id, b_id, c_id } => {
+            let mut a = evaluate_node_signed::<T, S>(
+                &graph[<&GraphTensorId as Into<usize>>::into(a_id)],
+                graph,
+            )?;
+            let b = evaluate_node_signed::<T, S>(
+                &graph[<&GraphTensorId as Into<usize>>::into(b_id)],
+                graph,
+            )?;
+            let c = evaluate_node_signed::<T, S>(
+                &graph[<&GraphTensorId as Into<usize>>::into(c_id)],
+                graph,
+            )?;
+            let mul_op = BinaryOpType::Mul.as_closure::<T>();
+            let add_op = BinaryOpType::Add.as_closure::<T>();
+            a.par_iter_mut()
+                .zip(b)
+                .zip(c)
+                .for_each(|((a, b), c)| *a = add_op(mul_op(*a, b), c));
+            Ok(a)
         }
         other => Ok(evaluate_node::<T, S>(other, graph)),
     }
