@@ -1,3 +1,5 @@
+#![feature(portable_simd)]
+
 mod cpu_storage;
 #[cfg(feature = "cuda")]
 mod cuda_backend;

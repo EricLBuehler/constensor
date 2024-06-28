@@ -116,7 +116,7 @@ impl<T: DType> Graph<T> {
     }
 }
 
-#[derive(PartialEq, Debug, Clone)]
+#[derive(PartialEq, Debug, Clone, Copy)]
 pub enum BinaryOpType {
     Add,
     Div,
@@ -125,7 +125,7 @@ pub enum BinaryOpType {
 }
 
 impl BinaryOpType {
-    pub fn to_c_op(&self) -> &'static str {
+    pub fn as_c_op(&self) -> &'static str {
         match self {
             Self::Add => "+",
             Self::Div => "/",
@@ -134,7 +134,7 @@ impl BinaryOpType {
         }
     }
 
-    pub fn to_closure<T: DType>(&self) -> impl Fn(T, T) -> T {
+    pub fn as_closure<T: DType>(&self) -> impl Fn(T, T) -> T {
         match self {
             Self::Add => |x, y| x + y,
             Self::Div => |x, y| x / y,

@@ -11,6 +11,8 @@ use half::f16;
 #[cfg(feature = "cuda")]
 use cudarc::driver::DeviceRepr;
 
+use crate::graph::BinaryOpType;
+
 /// Marker trait for signed datatypes.
 pub trait SignedDType: Neg<Output = Self> {}
 
@@ -90,7 +92,13 @@ sqrt_integral!(i32);
 sqrt_integral!(i64);
 
 pub trait DTypeOps:
-    Copy + Add<Output = Self> + Div<Output = Self> + Sub<Output = Self> + Mul<Output = Self> + Sqrtable
+    Copy
+    + Add<Output = Self>
+    + Div<Output = Self>
+    + Sub<Output = Self>
+    + Mul<Output = Self>
+    + Sqrtable
+    + SimdSupported
 {
 }
 
@@ -177,3 +185,73 @@ impl DType for bf16 {
         bf16::from_f64_const(i as f64) * step + start
     }
 }
+
+pub trait SimdSupported {
+    // In bytes, this is also the lane count in bytes
+    const BLOCK_SIZE: usize = 8;
+
+    fn binary_simd_op(lhs: &mut Vec<Self>, rhs: Vec<Self>, op: BinaryOpType)
+    where
+        Self: Sized;
+}
+
+macro_rules! simd_supported {
+    ($t:ident) => {
+        impl SimdSupported for $t {
+            fn binary_simd_op(lhs: &mut Vec<Self>, mut rhs: Vec<Self>, op: BinaryOpType)
+            where
+                Self: Sized,
+            {
+                // Pad to zeros
+                let pad_count = lhs.len() % Self::BLOCK_SIZE;
+                lhs.extend(vec![$t::ONE; Self::BLOCK_SIZE - pad_count]);
+                rhs.extend(vec![$t::ONE; Self::BLOCK_SIZE - pad_count]);
+                let n_blocks = lhs.len() / Self::BLOCK_SIZE;
+
+                let mut lhs_simd: Vec<std::simd::Simd<$t, { Self::BLOCK_SIZE }>> =
+                    Vec::with_capacity(n_blocks);
+                let mut rhs_simd: Vec<std::simd::Simd<$t, { Self::BLOCK_SIZE }>> =
+                    Vec::with_capacity(n_blocks);
+                let l_blocks = lhs.chunks(Self::BLOCK_SIZE).collect::<Vec<_>>();
+                let r_blocks = rhs.chunks(Self::BLOCK_SIZE).collect::<Vec<_>>();
+
+                for (l_blk, r_blk) in l_blocks.iter().zip(&r_blocks) {
+                    lhs_simd.push(std::simd::Simd::<$t, { Self::BLOCK_SIZE }>::from_slice(
+                        l_blk,
+                    ));
+                    rhs_simd.push(std::simd::Simd::<$t, { Self::BLOCK_SIZE }>::from_slice(
+                        r_blk,
+                    ));
+                }
+                *lhs = lhs_simd
+                    .into_iter()
+                    .zip(rhs_simd)
+                    .map(|(lhs, rhs)| match op {
+                        BinaryOpType::Add => lhs + rhs,
+                        BinaryOpType::Mul => lhs * rhs,
+                        BinaryOpType::Sub => lhs - rhs,
+                        BinaryOpType::Div => lhs / rhs,
+                    })
+                    .enumerate()
+                    .flat_map(
+                        |(i, x): (usize, std::simd::Simd<$t, { Self::BLOCK_SIZE }>)| {
+                            // Handle undoing the padding
+                            if i != n_blocks - 1 {
+                                x.as_array().to_vec()
+                            } else {
+                                x.as_array()[0..pad_count].to_vec()
+                            }
+                        },
+                    )
+                    .collect::<Vec<_>>();
+            }
+        }
+    };
+}
+
+simd_supported!(f32);
+simd_supported!(f64);
+simd_supported!(u8);
+simd_supported!(u32);
+simd_supported!(i32);
+simd_supported!(i64);
