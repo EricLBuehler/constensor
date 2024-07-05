@@ -200,55 +200,59 @@ pub trait SimdSupported {
 }
 
 macro_rules! simd_supported {
+    ($t:ident BINARY_INTERNAL) => {
+        fn binary_simd_op(lhs: &mut Vec<Self>, mut rhs: Vec<Self>, op: BinaryOpType)
+        where
+            Self: Sized,
+        {
+            // Pad to zeros
+            let pad_count = lhs.len() % Self::BLOCK_SIZE;
+            lhs.extend(vec![$t::ONE; Self::BLOCK_SIZE - pad_count]);
+            rhs.extend(vec![$t::ONE; Self::BLOCK_SIZE - pad_count]);
+            let n_blocks = lhs.len() / Self::BLOCK_SIZE;
+
+            let mut lhs_simd: Vec<std::simd::Simd<$t, { Self::BLOCK_SIZE }>> =
+                Vec::with_capacity(n_blocks);
+            let mut rhs_simd: Vec<std::simd::Simd<$t, { Self::BLOCK_SIZE }>> =
+                Vec::with_capacity(n_blocks);
+            let l_blocks = lhs.chunks(Self::BLOCK_SIZE).collect::<Vec<_>>();
+            let r_blocks = rhs.chunks(Self::BLOCK_SIZE).collect::<Vec<_>>();
+
+            for (l_blk, r_blk) in l_blocks.iter().zip(&r_blocks) {
+                lhs_simd.push(std::simd::Simd::<$t, { Self::BLOCK_SIZE }>::from_slice(
+                    l_blk,
+                ));
+                rhs_simd.push(std::simd::Simd::<$t, { Self::BLOCK_SIZE }>::from_slice(
+                    r_blk,
+                ));
+            }
+            *lhs = lhs_simd
+                .into_iter()
+                .zip(rhs_simd)
+                .map(|(lhs, rhs)| match op {
+                    BinaryOpType::Add => lhs + rhs,
+                    BinaryOpType::Mul => lhs * rhs,
+                    BinaryOpType::Sub => lhs - rhs,
+                    BinaryOpType::Div => lhs / rhs,
+                })
+                .enumerate()
+                .flat_map(
+                    |(i, x): (usize, std::simd::Simd<$t, { Self::BLOCK_SIZE }>)| {
+                        // Handle undoing the padding
+                        if i != n_blocks - 1 {
+                            x.as_array().to_vec()
+                        } else {
+                            x.as_array()[0..pad_count].to_vec()
+                        }
+                    },
+                )
+                .collect::<Vec<_>>();
+        }
+    };
+
     ($t:ident FMA) => {
         impl SimdSupported for $t {
-            fn binary_simd_op(lhs: &mut Vec<Self>, mut rhs: Vec<Self>, op: BinaryOpType)
-            where
-                Self: Sized,
-            {
-                // Pad to zeros
-                let pad_count = lhs.len() % Self::BLOCK_SIZE;
-                lhs.extend(vec![$t::ONE; Self::BLOCK_SIZE - pad_count]);
-                rhs.extend(vec![$t::ONE; Self::BLOCK_SIZE - pad_count]);
-                let n_blocks = lhs.len() / Self::BLOCK_SIZE;
-
-                let mut lhs_simd: Vec<std::simd::Simd<$t, { Self::BLOCK_SIZE }>> =
-                    Vec::with_capacity(n_blocks);
-                let mut rhs_simd: Vec<std::simd::Simd<$t, { Self::BLOCK_SIZE }>> =
-                    Vec::with_capacity(n_blocks);
-                let l_blocks = lhs.chunks(Self::BLOCK_SIZE).collect::<Vec<_>>();
-                let r_blocks = rhs.chunks(Self::BLOCK_SIZE).collect::<Vec<_>>();
-
-                for (l_blk, r_blk) in l_blocks.iter().zip(&r_blocks) {
-                    lhs_simd.push(std::simd::Simd::<$t, { Self::BLOCK_SIZE }>::from_slice(
-                        l_blk,
-                    ));
-                    rhs_simd.push(std::simd::Simd::<$t, { Self::BLOCK_SIZE }>::from_slice(
-                        r_blk,
-                    ));
-                }
-                *lhs = lhs_simd
-                    .into_iter()
-                    .zip(rhs_simd)
-                    .map(|(lhs, rhs)| match op {
-                        BinaryOpType::Add => lhs + rhs,
-                        BinaryOpType::Mul => lhs * rhs,
-                        BinaryOpType::Sub => lhs - rhs,
-                        BinaryOpType::Div => lhs / rhs,
-                    })
-                    .enumerate()
-                    .flat_map(
-                        |(i, x): (usize, std::simd::Simd<$t, { Self::BLOCK_SIZE }>)| {
-                            // Handle undoing the padding
-                            if i != n_blocks - 1 {
-                                x.as_array().to_vec()
-                            } else {
-                                x.as_array()[0..pad_count].to_vec()
-                            }
-                        },
-                    )
-                    .collect::<Vec<_>>();
-            }
+            simd_supported!($t BINARY_INTERNAL);
 
             fn fma_op(lhs: &mut Vec<Self>, mut a: Vec<Self>, mut b: Vec<Self>)
             where
@@ -307,53 +311,7 @@ macro_rules! simd_supported {
     };
     ($t:ident NOFMA) => {
         impl SimdSupported for $t {
-            fn binary_simd_op(lhs: &mut Vec<Self>, mut rhs: Vec<Self>, op: BinaryOpType)
-            where
-                Self: Sized,
-            {
-                // Pad to zeros
-                let pad_count = lhs.len() % Self::BLOCK_SIZE;
-                lhs.extend(vec![$t::ONE; Self::BLOCK_SIZE - pad_count]);
-                rhs.extend(vec![$t::ONE; Self::BLOCK_SIZE - pad_count]);
-                let n_blocks = lhs.len() / Self::BLOCK_SIZE;
-
-                let mut lhs_simd: Vec<std::simd::Simd<$t, { Self::BLOCK_SIZE }>> =
-                    Vec::with_capacity(n_blocks);
-                let mut rhs_simd: Vec<std::simd::Simd<$t, { Self::BLOCK_SIZE }>> =
-                    Vec::with_capacity(n_blocks);
-                let l_blocks = lhs.chunks(Self::BLOCK_SIZE).collect::<Vec<_>>();
-                let r_blocks = rhs.chunks(Self::BLOCK_SIZE).collect::<Vec<_>>();
-
-                for (l_blk, r_blk) in l_blocks.iter().zip(&r_blocks) {
-                    lhs_simd.push(std::simd::Simd::<$t, { Self::BLOCK_SIZE }>::from_slice(
-                        l_blk,
-                    ));
-                    rhs_simd.push(std::simd::Simd::<$t, { Self::BLOCK_SIZE }>::from_slice(
-                        r_blk,
-                    ));
-                }
-                *lhs = lhs_simd
-                    .into_iter()
-                    .zip(rhs_simd)
-                    .map(|(lhs, rhs)| match op {
-                        BinaryOpType::Add => lhs + rhs,
-                        BinaryOpType::Mul => lhs * rhs,
-                        BinaryOpType::Sub => lhs - rhs,
-                        BinaryOpType::Div => lhs / rhs,
-                    })
-                    .enumerate()
-                    .flat_map(
-                        |(i, x): (usize, std::simd::Simd<$t, { Self::BLOCK_SIZE }>)| {
-                            // Handle undoing the padding
-                            if i != n_blocks - 1 {
-                                x.as_array().to_vec()
-                            } else {
-                                x.as_array()[0..pad_count].to_vec()
-                            }
-                        },
-                    )
-                    .collect::<Vec<_>>();
-            }
+            simd_supported!($t BINARY_INTERNAL);
 
             fn fma_op(lhs: &mut Vec<Self>, mut a: Vec<Self>, mut b: Vec<Self>)
             where
@@ -410,11 +368,37 @@ macro_rules! simd_supported {
             }
         }
     };
-}
+    ($t:ident NOSIMD) => {
+        impl SimdSupported for $t {
+            fn binary_simd_op(lhs: &mut Vec<Self>, rhs: Vec<Self>, op: BinaryOpType)
+            where
+                Self: Sized,
+            {
+                *lhs = lhs
+                    .into_iter()
+                    .zip(rhs)
+                    .map(|(lhs, rhs)| match op {
+                        BinaryOpType::Add => *lhs + rhs,
+                        BinaryOpType::Mul => *lhs * rhs,
+                        BinaryOpType::Sub => *lhs - rhs,
+                        BinaryOpType::Div => *lhs / rhs,
+                    })
+                    .collect::<Vec<_>>();
+            }
 
-// u8
-// u32/i32
-// i64
+            fn fma_op(lhs: &mut Vec<Self>, a: Vec<Self>, b: Vec<Self>)
+            where
+                Self: Sized,
+            {
+                *lhs = lhs
+                    .into_iter()
+                    .zip(a.into_iter().zip(b))
+                    .map(|(lhs, (a, b))| *lhs * a + b)
+                    .collect::<Vec<_>>();
+            }
+        }
+    };
+}
 
 simd_supported!(f32 FMA);
 simd_supported!(f64 FMA);
@@ -422,3 +406,8 @@ simd_supported!(u8 NOFMA);
 simd_supported!(u32 NOFMA);
 simd_supported!(i32 NOFMA);
 simd_supported!(i64 NOFMA);
+
+#[cfg(feature = "half")]
+simd_supported!(f16 NOSIMD);
+#[cfg(feature = "bfloat")]
+simd_supported!(bf16 NOSIMD);
