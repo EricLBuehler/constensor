@@ -16,6 +16,6 @@ pub use device::Cpu;
 pub use device::Cuda;
 pub use dtype::DType;
 pub use error::{Error, Result};
-pub use graph::{Graph, Op};
+pub use graph::{Graph, GraphNode, Op};
 pub use shape::{Shape, R1, R2, R3, R4, R5, R6};
 pub use tensor::{GraphTensor, Tensor};

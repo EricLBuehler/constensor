@@ -2,7 +2,7 @@ use std::borrow::Cow;
 
 #[cfg(feature = "cuda")]
 use crate::cuda_backend::CudaStorage;
-use crate::{cpu_storage::CpuStorage, DType, Op, Result, Shape};
+use crate::{cpu_storage::CpuStorage, DType, GraphNode, Result};
 
 pub enum Storage<T: DType> {
     #[cfg(feature = "cuda")]
@@ -27,8 +27,5 @@ pub trait BackendStorage<T: DType> {
 pub trait BackendDevice {
     type Storage<X: DType>: BackendStorage<X>;
 
-    fn compile_and_run_graph<S: Shape, T: DType>(
-        &self,
-        graph: &[Op<T>],
-    ) -> Result<Self::Storage<T>>;
+    fn compile_and_run_graph<T: DType>(&self, graph: &[GraphNode<T>]) -> Result<Self::Storage<T>>;
 }

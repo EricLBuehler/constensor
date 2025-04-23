@@ -16,6 +16,7 @@ half = { workspace = true, optional = true }
 dirs = "5.0.1"
 rayon = "1.10.0"
 petgraph.workspace = true
+gemm = "0.18"
 
 [features]
 default = ["half", "bfloat"]

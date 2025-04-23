@@ -10,7 +10,7 @@ use std::{
     sync::{Arc, RwLock, RwLockReadGuard},
 };
 
-use crate::{DType, Result};
+use crate::{DType, Result, Shape};
 
 use petgraph::Graph as PetGraph;
 use petgraph::{
@@ -19,8 +19,14 @@ use petgraph::{
 };
 
 #[derive(Clone)]
+pub struct GraphNode<T: DType> {
+    pub op: Op<T>,
+    pub shape: Vec<usize>,
+}
+
+#[derive(Clone)]
 pub struct Graph<T: DType> {
-    data: Arc<RwLock<Vec<Op<T>>>>,
+    data: Arc<RwLock<Vec<GraphNode<T>>>>,
     id: Arc<RwLock<usize>>,
 }
 
@@ -34,13 +40,16 @@ impl<T: DType> Graph<T> {
     }
 
     /// Read-only access to the list of operations
-    pub fn get_ops(&self) -> RwLockReadGuard<Vec<Op<T>>> {
+    pub fn get_ops(&self) -> RwLockReadGuard<Vec<GraphNode<T>>> {
         self.data.read().unwrap()
     }
 
     /// Append an operation to the graph
-    pub(crate) fn add_op(&self, op: Op<T>) {
-        self.data.write().unwrap().push(op);
+    pub(crate) fn add_op<S: Shape>(&self, op: Op<T>) {
+        self.data.write().unwrap().push(GraphNode {
+            op,
+            shape: S::shape(),
+        });
     }
 
     /// Generate the next unique tensor ID
@@ -59,14 +68,16 @@ impl<T: DType> Graph<T> {
 
         // 1) Add only non‐NoOp nodes
         for op in ops.iter() {
-            match op {
+            match op.op {
                 Op::NoOp => {
                     idx_map.push(None);
                 }
                 _ => {
-                    let label = match op {
-                        Op::Fill { v } => format!("Fill({:?})", v),
-                        Op::Arange { start, step, stop } => {
+                    let label = match &op.op {
+                        Op::Fill { v, .. } => format!("Fill({:?})", v),
+                        Op::Arange {
+                            start, step, stop, ..
+                        } => {
                             format!(
                                 "Arange(start={:?}, step={:?}, stop={:?})",
                                 start, step, stop
@@ -79,6 +90,8 @@ impl<T: DType> Graph<T> {
                         Op::UnaryOp { operator, .. } => format!("UnOp({:?})", operator),
                         Op::FusedMulAdd { .. } => "FMA".to_string(),
                         Op::InplaceFusedMulAdd { .. } => "InplaceFMA".to_string(),
+                        // Matrix multiplication
+                        Op::MatMul { .. } => "MatMul".to_string(),
                         // we already matched NoOp above
                         Op::NoOp => unreachable!(),
                     };
@@ -95,7 +108,7 @@ impl<T: DType> Graph<T> {
                 Some(dst) => dst,
                 None => continue,
             };
-            match op {
+            match &op.op {
                 Op::BinaryOp { l_id, r_id, .. } | Op::InplaceBinaryOp { l_id, r_id, .. } => {
                     if let Some(src) = idx_map[usize::from(l_id)] {
                         g.add_edge(src, dst, ());
@@ -109,7 +122,9 @@ impl<T: DType> Graph<T> {
                         g.add_edge(src, dst, ());
                     }
                 }
-                Op::FusedMulAdd { a_id, b_id, c_id }
+                Op::FusedMulAdd {
+                    a_id, b_id, c_id, ..
+                }
                 | Op::InplaceFusedMulAdd {
                     a_id, b_id, c_id, ..
                 } => {
@@ -117,6 +132,14 @@ impl<T: DType> Graph<T> {
                         if let Some(src) = idx_map[usize::from(src_id)] {
                             g.add_edge(src, dst, ());
                         }
+                    }
+                }
+                Op::MatMul { l_id, r_id, .. } => {
+                    if let Some(src) = idx_map[usize::from(l_id)] {
+                        g.add_edge(src, dst, ());
+                    }
+                    if let Some(src) = idx_map[usize::from(r_id)] {
+                        g.add_edge(src, dst, ());
                     }
                 }
                 // NoOp and Fill/Arange don’t create incoming edges
@@ -171,18 +194,19 @@ impl<T: DType> Graph<T> {
                 l_id: a_id,
                 r_id: b_id,
                 operator: BinaryOpType::Mul,
-            } = x
+            } = &x.op
             {
                 // Check if next op uses this
                 if let Op::BinaryOp {
                     l_id: l_y,
                     r_id: r_y,
                     operator: BinaryOpType::Add,
-                } = &ops[x_id + 1]
+                } = &ops[x_id + 1].op
                 {
                     let y_id = x_id + 1;
                     if <&GraphTensorId as Into<usize>>::into(l_y) == x_id
                         || <&GraphTensorId as Into<usize>>::into(r_y) == x_id
+                            && x.shape == ops[x_id + 1].shape
                     {
                         // Want to see what is being added to the result of the mul
                         let rhs_add = if <&GraphTensorId as Into<usize>>::into(l_y) == x_id {
@@ -190,31 +214,43 @@ impl<T: DType> Graph<T> {
                         } else {
                             l_y
                         };
-                        new_ops[y_id] = Op::FusedMulAdd {
-                            a_id: GraphTensorId::from(a_id.0.get()),
-                            b_id: GraphTensorId::from(b_id.0.get()),
-                            c_id: GraphTensorId::from(rhs_add.0.get()),
+                        new_ops[y_id] = GraphNode {
+                            op: Op::FusedMulAdd {
+                                a_id: GraphTensorId::from(a_id.0.get()),
+                                b_id: GraphTensorId::from(b_id.0.get()),
+                                c_id: GraphTensorId::from(rhs_add.0.get()),
+                            },
+                            shape: x.shape.clone(),
                         };
-                        new_ops[x_id] = Op::NoOp;
+                        new_ops[x_id] = GraphNode {
+                            op: Op::NoOp,
+                            shape: x.shape.clone(),
+                        };
 
                         // Look for ops which actually use this one
                         for user in ops.iter() {
-                            let ids = match user {
+                            let ids = match &user.op {
                                 Op::Arange {
                                     start: _,
                                     step: _,
                                     stop: _,
+                                    ..
                                 } => vec![],
                                 Op::BinaryOp { l_id, r_id, .. }
                                 | Op::InplaceBinaryOp { l_id, r_id, .. } => vec![l_id, r_id],
-                                Op::Fill { v: _ } => vec![],
-                                Op::UnaryOp { v_id, operator: _ } => vec![v_id],
-                                Op::FusedMulAdd { a_id, b_id, c_id }
+                                Op::Fill { v: _, .. } => vec![],
+                                Op::UnaryOp {
+                                    v_id, operator: _, ..
+                                } => vec![v_id],
+                                Op::FusedMulAdd {
+                                    a_id, b_id, c_id, ..
+                                }
                                 | Op::InplaceFusedMulAdd {
                                     a_id, b_id, c_id, ..
                                 } => {
                                     vec![a_id, b_id, c_id]
                                 }
+                                Op::MatMul { l_id, r_id, .. } => vec![l_id, r_id],
                                 Op::NoOp => vec![],
                             };
                             let used_ids = ids
@@ -236,16 +272,16 @@ impl<T: DType> Graph<T> {
         // Remove any NoOp entries before storing back to the graph
         let filtered_ops = new_ops
             .into_iter()
-            .filter(|op| !matches!(op, Op::NoOp))
+            .filter(|op| !matches!(op.op, Op::NoOp))
             .collect::<Vec<_>>();
         *self.data.write().unwrap() = filtered_ops;
     }
 
     /// Count how often each tensor id is used as an input.
-    fn count_input_usage(ops: &[Op<T>]) -> HashMap<usize, usize> {
+    fn count_input_usage(ops: &[GraphNode<T>]) -> HashMap<usize, usize> {
         let mut usage: HashMap<usize, usize> = HashMap::new();
         for op in ops {
-            match op {
+            match &op.op {
                 Op::BinaryOp { l_id, r_id, .. } | Op::InplaceBinaryOp { l_id, r_id, .. } => {
                     *usage.entry(usize::from(l_id)).or_default() += 1;
                     *usage.entry(usize::from(r_id)).or_default() += 1;
@@ -253,13 +289,19 @@ impl<T: DType> Graph<T> {
                 Op::UnaryOp { v_id, .. } => {
                     *usage.entry(usize::from(v_id)).or_default() += 1;
                 }
-                Op::FusedMulAdd { a_id, b_id, c_id }
+                Op::FusedMulAdd {
+                    a_id, b_id, c_id, ..
+                }
                 | Op::InplaceFusedMulAdd {
                     a_id, b_id, c_id, ..
                 } => {
                     *usage.entry(usize::from(a_id)).or_default() += 1;
                     *usage.entry(usize::from(b_id)).or_default() += 1;
                     *usage.entry(usize::from(c_id)).or_default() += 1;
+                }
+                Op::MatMul { l_id, r_id, .. } => {
+                    *usage.entry(usize::from(l_id)).or_default() += 1;
+                    *usage.entry(usize::from(r_id)).or_default() += 1;
                 }
                 Op::NoOp | Op::Fill { .. } | Op::Arange { .. } => {}
             }
@@ -278,7 +320,7 @@ impl<T: DType> Graph<T> {
                 l_id,
                 r_id,
                 operator,
-            } = op
+            } = &op.op
             {
                 let l_idx = usize::from(l_id);
                 let r_idx = usize::from(r_id);
@@ -292,41 +334,54 @@ impl<T: DType> Graph<T> {
                         l_id.clone()
                     };
                     // Replace with InplaceBinaryOp
-                    new_ops[i] = Op::InplaceBinaryOp {
-                        out: target.clone(),
-                        l_id: l_id.clone(),
-                        r_id: r_id.clone(),
-                        operator: *operator,
+                    new_ops[i] = GraphNode {
+                        op: Op::InplaceBinaryOp {
+                            out: target.clone(),
+                            l_id: l_id.clone(),
+                            r_id: r_id.clone(),
+                            operator: *operator,
+                        },
+                        shape: op.shape.clone(),
                     };
                     // Update all future uses of this op's result (index i) to use 'target'.
                     for fut in new_ops.iter_mut().skip(i + 1) {
-                        match fut {
+                        match &fut.op {
                             Op::BinaryOp { l_id, r_id, .. }
                             | Op::InplaceBinaryOp { l_id, r_id, .. } => {
-                                if usize::from(&*l_id) == i {
+                                if usize::from(l_id) == i {
                                     l_id.0.set(usize::from(&target));
                                 }
-                                if usize::from(&*r_id) == i {
+                                if usize::from(r_id) == i {
                                     r_id.0.set(usize::from(&target));
                                 }
                             }
                             Op::UnaryOp { v_id, .. } => {
-                                if usize::from(&*v_id) == i {
+                                if usize::from(v_id) == i {
                                     v_id.0.set(usize::from(&target));
                                 }
                             }
-                            Op::FusedMulAdd { a_id, b_id, c_id }
+                            Op::FusedMulAdd {
+                                a_id, b_id, c_id, ..
+                            }
                             | Op::InplaceFusedMulAdd {
                                 a_id, b_id, c_id, ..
                             } => {
-                                if usize::from(&*a_id) == i {
+                                if usize::from(a_id) == i {
                                     a_id.0.set(usize::from(&target));
                                 }
-                                if usize::from(&*b_id) == i {
+                                if usize::from(b_id) == i {
                                     b_id.0.set(usize::from(&target));
                                 }
-                                if usize::from(&*c_id) == i {
+                                if usize::from(c_id) == i {
                                     c_id.0.set(usize::from(&target));
+                                }
+                            }
+                            Op::MatMul { l_id, r_id, .. } => {
+                                if usize::from(l_id) == i {
+                                    l_id.0.set(usize::from(&target));
+                                }
+                                if usize::from(r_id) == i {
+                                    r_id.0.set(usize::from(&target));
                                 }
                             }
                             Op::NoOp | Op::Fill { .. } | Op::Arange { .. } => {}
@@ -345,7 +400,7 @@ impl<T: DType> Graph<T> {
         let mut new_ops = ops.clone();
         let usage = Self::count_input_usage(&ops);
         for (i, op) in ops.iter().enumerate() {
-            if let Op::FusedMulAdd { a_id, b_id, c_id } = op {
+            if let Op::FusedMulAdd { a_id, b_id, c_id } = &op.op {
                 let mut target = None;
                 // If an input is used only once, we can reuse its buffer; default order: a_id, then b_id, then c_id
                 if *usage.get(&usize::from(a_id)).unwrap_or(&0) == 1 {
@@ -356,41 +411,54 @@ impl<T: DType> Graph<T> {
                     target = Some(c_id.clone());
                 }
                 if let Some(out) = target {
-                    new_ops[i] = Op::InplaceFusedMulAdd {
-                        out: out.clone(),
-                        a_id: a_id.clone(),
-                        b_id: b_id.clone(),
-                        c_id: c_id.clone(),
+                    new_ops[i] = GraphNode {
+                        op: Op::InplaceFusedMulAdd {
+                            out: out.clone(),
+                            a_id: a_id.clone(),
+                            b_id: b_id.clone(),
+                            c_id: c_id.clone(),
+                        },
+                        shape: op.shape.clone(),
                     };
                     // Update all future ops that reference the original index i
                     for fut in new_ops.iter_mut().skip(i + 1) {
-                        match fut {
+                        match &fut.op {
                             Op::BinaryOp { l_id, r_id, .. }
                             | Op::InplaceBinaryOp { l_id, r_id, .. } => {
-                                if usize::from(&*l_id) == i {
+                                if usize::from(l_id) == i {
                                     l_id.0.set(usize::from(&out));
                                 }
-                                if usize::from(&*r_id) == i {
+                                if usize::from(r_id) == i {
                                     r_id.0.set(usize::from(&out));
                                 }
                             }
                             Op::UnaryOp { v_id, .. } => {
-                                if usize::from(&*v_id) == i {
+                                if usize::from(v_id) == i {
                                     v_id.0.set(usize::from(&out));
                                 }
                             }
-                            Op::FusedMulAdd { a_id, b_id, c_id }
+                            Op::FusedMulAdd {
+                                a_id, b_id, c_id, ..
+                            }
                             | Op::InplaceFusedMulAdd {
                                 a_id, b_id, c_id, ..
                             } => {
-                                if usize::from(&*a_id) == i {
+                                if usize::from(a_id) == i {
                                     a_id.0.set(usize::from(&out));
                                 }
-                                if usize::from(&*b_id) == i {
+                                if usize::from(b_id) == i {
                                     b_id.0.set(usize::from(&out));
                                 }
-                                if usize::from(&*c_id) == i {
+                                if usize::from(c_id) == i {
                                     c_id.0.set(usize::from(&out));
+                                }
+                            }
+                            Op::MatMul { l_id, r_id, .. } => {
+                                if usize::from(l_id) == i {
+                                    l_id.0.set(usize::from(&out));
+                                }
+                                if usize::from(r_id) == i {
+                                    r_id.0.set(usize::from(&out));
                                 }
                             }
                             Op::NoOp | Op::Fill { .. } | Op::Arange { .. } => {}
@@ -500,6 +568,13 @@ pub enum Op<T: DType> {
         a_id: GraphTensorId,
         b_id: GraphTensorId,
         c_id: GraphTensorId,
+    },
+    /// Matrix multiplication: l_id (A x B) * r_id (B x C) -> (A x C)
+    MatMul {
+        l_id: GraphTensorId,
+        r_id: GraphTensorId,
+        /// Inner dimension B
+        k: usize,
     },
     NoOp,
 }
