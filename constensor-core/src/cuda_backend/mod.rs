@@ -115,8 +115,11 @@ fn handle_node<T: DType>(
             *header += &format!("T {} = {v:?};\n", name.to_name());
             format!("({})", name.to_name())
         }
-        Op::Arange { start, step, stop } => {
-            // todo!();
+        Op::Arange {
+            start,
+            step,
+            stop: _,
+        } => {
             *current_name += 1;
             let name = Name(*current_name);
             *header += &format!(
