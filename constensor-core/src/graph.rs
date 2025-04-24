@@ -19,7 +19,7 @@ use petgraph::{
     graph::NodeIndex,
 };
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct GraphNode<T: DType> {
     pub op: Op<T>,
     pub shape: Vec<usize>,
@@ -128,12 +128,19 @@ impl<T: DType> Graph<T> {
                         }
                     }
                 }
-                Op::MatMul { l_id, r_id, .. } => {
+                Op::MatMul {
+                    l_id, r_id, o_id, ..
+                } => {
                     if let Some(src) = idx_map[l_id.get()] {
                         g.add_edge(src, dst, ());
                     }
                     if let Some(src) = idx_map[r_id.get()] {
                         g.add_edge(src, dst, ());
+                    }
+                    if let Some(o_id) = o_id {
+                        if let Some(src) = idx_map[o_id.get()] {
+                            g.add_edge(src, dst, ());
+                        }
                     }
                 }
                 // NoOp and Fill/Arange don’t create incoming edges
@@ -307,7 +314,7 @@ impl<T: DType> Graph<T> {
             {
                 let l_use = usage.get(l_id).copied().unwrap_or(0);
                 let r_use = usage.get(r_id).copied().unwrap_or(0);
-                if l_use == 1 || r_use == 1 {
+                if l_use <= 1 || r_use <= 1 {
                     // Choose target for in-place: if both, default to lhs.
                     let target = if r_use > l_use {
                         r_id.clone()
@@ -380,11 +387,11 @@ impl<T: DType> Graph<T> {
             if let Op::FusedMulAdd { a_id, b_id, c_id } = &op.op {
                 let mut target = None;
                 // If an input is used only once, we can reuse its buffer; default order: a_id, then b_id, then c_id
-                if *usage.get(a_id).unwrap_or(&0) == 1 {
+                if *usage.get(a_id).unwrap_or(&0) <= 1 {
                     target = Some(a_id.clone());
-                } else if *usage.get(b_id).unwrap_or(&0) == 1 {
+                } else if *usage.get(b_id).unwrap_or(&0) <= 1 {
                     target = Some(b_id.clone());
-                } else if *usage.get(c_id).unwrap_or(&0) == 1 {
+                } else if *usage.get(c_id).unwrap_or(&0) <= 1 {
                     target = Some(c_id.clone());
                 }
                 if let Some(out) = target {
@@ -442,6 +449,84 @@ impl<T: DType> Graph<T> {
         *self.data.write().unwrap() = new_ops;
     }
 
+    /// Optimize by inplacing the output of a matmul when inputs are not reused.
+    fn optimize_inplace_matmul(&mut self) {
+        let ops = self.data.write().unwrap().clone();
+        let mut new_ops = ops.clone();
+        #[allow(clippy::mutable_key_type)]
+        let usage = Self::count_input_usage(&ops);
+        // Transform eligible BinaryOps into InplaceBinaryOps.
+        for (i, op) in ops.iter().enumerate() {
+            if let Op::MatMul {
+                o_id: Some(o_id),
+                l_id,
+                r_id,
+                k,
+                alpha,
+                beta,
+            } = &op.op
+            {
+                let o_use = usage.get(o_id).copied().unwrap_or(0);
+                if o_use <= 1 {
+                    // Replace with InplaceBinaryOp
+                    new_ops[i] = GraphNode {
+                        op: Op::MatMul {
+                            o_id: Some(o_id.to_inplace()),
+                            l_id: l_id.clone(),
+                            r_id: r_id.clone(),
+                            k: *k,
+                            alpha: *alpha,
+                            beta: *beta,
+                        },
+                        shape: op.shape.clone(),
+                    };
+                    // Update all future uses of this op's result (index i) to use 'o_id'.
+                    for fut in new_ops.iter_mut().skip(i + 1) {
+                        match &fut.op {
+                            Op::BinaryOp { l_id, r_id, .. } => {
+                                if l_id.get() == i {
+                                    l_id.set(o_id.get());
+                                }
+                                if r_id.get() == i {
+                                    r_id.set(o_id.get());
+                                }
+                            }
+                            Op::UnaryOp { v_id, .. } => {
+                                if v_id.get() == i {
+                                    v_id.set(o_id.get());
+                                }
+                            }
+                            Op::FusedMulAdd {
+                                a_id, b_id, c_id, ..
+                            } => {
+                                if a_id.get() == i {
+                                    a_id.set(o_id.get());
+                                }
+                                if b_id.get() == i {
+                                    b_id.set(o_id.get());
+                                }
+                                if c_id.get() == i {
+                                    c_id.set(o_id.get());
+                                }
+                            }
+                            Op::MatMul { l_id, r_id, .. } => {
+                                if l_id.get() == i {
+                                    l_id.set(o_id.get());
+                                }
+                                if r_id.get() == i {
+                                    r_id.set(o_id.get());
+                                }
+                            }
+                            Op::NoOp | Op::Fill { .. } | Op::Arange { .. } => {}
+                        }
+                    }
+                }
+            }
+        }
+        // Commit the transformed op list.
+        *self.data.write().unwrap() = new_ops;
+    }
+
     /// Optimize this graph.
     ///
     /// Apply the following optimizations
@@ -450,6 +535,7 @@ impl<T: DType> Graph<T> {
         self.optimize_fma();
         self.optimize_inplace_bin();
         self.optimize_inplace_fma();
+        self.optimize_inplace_matmul();
     }
 }
 

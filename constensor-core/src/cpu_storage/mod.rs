@@ -165,8 +165,6 @@ impl BackendDevice for CpuDevice {
                         alpha,
                         beta,
                     } => {
-                        let a_buf = results[l_id.get()].as_ref().unwrap();
-                        let b_buf = results[r_id.get()].as_ref().unwrap();
                         // Determine output dimensions from shape S (must be 2D)
                         let shape = out_shape;
                         assert!(shape.len() == 3);
@@ -175,15 +173,22 @@ impl BackendDevice for CpuDevice {
                         let n = shape[2];
 
                         let mut out = if let Some(o_id) = o_id {
-                            let o_buf = results[o_id.get()].as_ref().unwrap();
-                            (*o_buf).clone()
+                            if o_id.is_inplace() {
+                                results[o_id.get()].take().unwrap()
+                            } else {
+                                let o_buf = results[o_id.get()].as_ref().unwrap();
+                                PooledBuffer::new((*o_buf).clone(), pool.clone())
+                            }
                         } else {
-                            pool.borrow_mut().get_buffer(m * n)
+                            PooledBuffer::new(pool.borrow_mut().get_buffer(m * n), pool.clone())
                         };
+
+                        let a_buf = results[l_id.get()].as_ref().unwrap();
+                        let b_buf = results[r_id.get()].as_ref().unwrap();
 
                         T::launch_gemm(a_buf, b_buf, b, m, n, *k, &mut out, *alpha, *beta);
 
-                        PooledBuffer::new(out, pool.clone())
+                        out
                     }
                     Op::NoOp => unreachable!("NoOp should not be evaluated."),
                 };
