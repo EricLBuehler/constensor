@@ -6,6 +6,9 @@ use half::bf16;
 use half::f16;
 
 pub trait GemmDispatch {
+    // In bytes, this is also the lane count in bytes
+    const BLOCK_SIZE: usize = 8;
+
     #[allow(clippy::too_many_arguments)]
     // Matrix multiplication: (B x M x K) * (B x K x N) = (B x M x N)
     fn launch_gemm(
@@ -120,15 +123,100 @@ macro_rules! instantiate_gemm {
             }
         }
     };
+    // SIMD-accelerated gemm using SimdSupported for vectorized operations along 'n' dimension
+    ($rt:ident, $init:expr, SIMD) => {
+        impl GemmDispatch for $rt {
+            fn launch_gemm(
+                lhs: &[Self],
+                rhs: &[Self],
+                b: usize,
+                m: usize,
+                n: usize,
+                k: usize,
+                out: &mut Vec<Self>,
+                alpha: Self,
+                beta: Self,
+            ) where
+                Self: Sized,
+            {
+                use crate::dtype::SimdSupported;
+                use crate::graph::BinaryOpType;
+                // number of lanes for vectorization
+                const BLOCK_SIZE: usize = <$rt as SimdSupported>::BLOCK_SIZE;
+                let n_blocks = n / BLOCK_SIZE;
+                let rem = n % BLOCK_SIZE;
+
+                for batch in 0..b {
+                    let lhs_p = &lhs[batch * m * k..];
+                    let rhs_p = &rhs[batch * k * n..];
+                    let out_p = &mut out[batch * m * n..];
+
+                    for i in 0..m {
+                        // mutable slice for current output row
+                        let out_row = &mut out_p[i * n..i * n + n];
+                        // process full vector blocks
+                        for block in 0..n_blocks {
+                            let off = block * BLOCK_SIZE;
+                            // initialize or scale existing output
+                            let out_chunk = &mut out_row[off..off + BLOCK_SIZE];
+                            if beta != $init {
+                                // scale by alpha: out = alpha * out
+                                let alpha_arr = [alpha; BLOCK_SIZE];
+                                <Self as SimdSupported>::binary_simd_op_inplace_lhs(
+                                    out_chunk,
+                                    &alpha_arr,
+                                    BinaryOpType::Mul,
+                                );
+                            } else {
+                                // initialize to zero
+                                for x in out_chunk.iter_mut() {
+                                    *x = $init;
+                                }
+                            }
+                            // accumulate dot-product contributions
+                            for p in 0..k {
+                                let a_val = lhs_p[i * k + p];
+                                let a_arr = [a_val; BLOCK_SIZE];
+                                let b_chunk = &rhs_p[p * n + off..p * n + off + BLOCK_SIZE];
+                                <Self as SimdSupported>::fma_op_inplace_c(
+                                    &a_arr, b_chunk, out_chunk,
+                                );
+                            }
+                        }
+                        // handle remainder elements
+                        if rem > 0 {
+                            let off = n_blocks * BLOCK_SIZE;
+                            let out_chunk = &mut out_row[off..off + rem];
+                            if beta != $init {
+                                for x in out_chunk.iter_mut() {
+                                    *x = alpha * *x;
+                                }
+                            } else {
+                                for x in out_chunk.iter_mut() {
+                                    *x = $init;
+                                }
+                            }
+                            for p in 0..k {
+                                let a_val = lhs_p[i * k + p];
+                                for j in 0..rem {
+                                    out_chunk[j] = out_chunk[j] + a_val * rhs_p[p * n + off + j];
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    };
 }
 
-instantiate_gemm!(u8, 0, NAIVE);
-instantiate_gemm!(u32, 0, NAIVE);
-instantiate_gemm!(i32, 0, NAIVE);
-instantiate_gemm!(i64, 0, NAIVE);
+instantiate_gemm!(u8, 0, SIMD);
+instantiate_gemm!(u32, 0, SIMD);
+instantiate_gemm!(i32, 0, SIMD);
+instantiate_gemm!(i64, 0, SIMD);
 instantiate_gemm!(f32, 0., GEMM);
 instantiate_gemm!(f64, 0., GEMM);
 #[cfg(feature = "bfloat")]
-instantiate_gemm!(bf16, bf16::from_f32(0.), NAIVE);
+instantiate_gemm!(bf16, bf16::from_f32(0.), SIMD);
 #[cfg(feature = "half")]
 instantiate_gemm!(f16, f16::from_f32(0.), GEMM);
