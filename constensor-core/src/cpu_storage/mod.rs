@@ -209,20 +209,9 @@ impl BackendDevice for CpuDevice {
                         assert!(shape.len() == 2, "MatMul requires 2D output shape");
                         let m = shape[0];
                         let n = shape[1];
-                        let k_dim = k;
-                        // Allocate output buffer and compute C = A * B via direct multiplication
-                        let k_dim = *k_dim;
                         let mut out = pool.borrow_mut().get_buffer(m * n);
                         // Compute matrix multiplication: out[i,j] = sum_p a_data[i,k] * b_data[k,j]
-                        for i in 0..m {
-                            for j in 0..n {
-                                let mut sum = T::ZERO;
-                                for p in 0..k_dim {
-                                    sum = sum + a_buf[i * k_dim + p] * b_buf[p * n + j];
-                                }
-                                out[i * n + j] = sum;
-                            }
-                        }
+                        T::launch_gemm(a_buf, b_buf, m, n, *k, &mut out, T::ZERO, T::ONE);
                         PooledBuffer::new(out, pool.clone())
                     }
                     Op::NoOp => unreachable!("NoOp should not be evaluated."),

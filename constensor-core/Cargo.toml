@@ -17,6 +17,7 @@ dirs = "5.0.1"
 rayon = "1.10.0"
 petgraph.workspace = true
 gemm = "0.18"
+num_cpus = "1.16.0"
 
 [features]
 default = ["half", "bfloat"]
