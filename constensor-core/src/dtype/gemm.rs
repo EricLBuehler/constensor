@@ -23,6 +23,94 @@ pub trait GemmDispatch {
         beta: Self,
     ) where
         Self: Sized;
+
+    #[cfg(feature = "cuda")]
+    #[allow(clippy::too_many_arguments)]
+    // Matrix multiplication: (B x M x K) * (B x K x N) = (B x M x N)
+    fn launch_gemm_cuda(
+        cublas: cudarc::cublas::CudaBlas,
+        lhs: &cudarc::driver::CudaSlice<Self>,
+        rhs: &cudarc::driver::CudaSlice<Self>,
+        b: usize,
+        m: usize,
+        n: usize,
+        k: usize,
+        out: &mut cudarc::driver::CudaSlice<Self>,
+        alpha: Self,
+        beta: Self,
+    ) -> crate::Result<()>
+    where
+        Self: Sized;
+}
+
+macro_rules! instantiate_gemm_cuda {
+    (u8) => {
+        instantiate_gemm_cuda!(__instantiate_fail);
+    };
+    (u32) => {
+        instantiate_gemm_cuda!(__instantiate_fail);
+    };
+    (i32) => {
+        instantiate_gemm_cuda!(__instantiate_fail);
+    };
+    (i64) => {
+        instantiate_gemm_cuda!(__instantiate_fail);
+    };
+
+    (__instantiate_fail) => {
+        #[cfg(feature = "cuda")]
+        fn launch_gemm_cuda(
+            _cublas: cudarc::cublas::CudaBlas,
+            _lhs: &cudarc::driver::CudaSlice<Self>,
+            _rhs: &cudarc::driver::CudaSlice<Self>,
+            _b: usize,
+            _m: usize,
+            _n: usize,
+            _k: usize,
+            _out: &mut cudarc::driver::CudaSlice<Self>,
+            _alpha: Self,
+            _beta: Self,
+        ) -> crate::Result<()>
+        where
+            Self: Sized,
+        {
+            panic!("`launch_gemm_cuda` called with invalid configuration (w/o CUDA, dtype)")
+        }
+    };
+
+    ($rt:ident) => {
+        #[cfg(feature = "cuda")]
+        fn launch_gemm_cuda(
+            cublas: cudarc::cublas::CudaBlas,
+            lhs: &cudarc::driver::CudaSlice<$rt>,
+            rhs: &cudarc::driver::CudaSlice<$rt>,
+            b: usize,
+            m: usize,
+            n: usize,
+            k: usize,
+            out: &mut cudarc::driver::CudaSlice<$rt>,
+            alpha: $rt,
+            beta: $rt,
+        ) -> crate::Result<()> {
+            use crate::cuda_backend::error::WrapErr;
+            use cudarc::cublas::Gemm;
+
+            let gemm_cfg = crate::cuda_backend::util::gemm_config(alpha, beta, (b, m, n, k))?;
+
+            unsafe {
+                cublas
+                    .gemm_strided_batched(
+                        gemm_cfg,
+                        &lhs.as_view(),
+                        &rhs.as_view(),
+                        &mut out.as_view_mut(),
+                    )
+                    .w()?;
+            }
+
+            Ok(())
+        }
+    };
 }
 
 macro_rules! instantiate_gemm {
@@ -54,6 +142,8 @@ macro_rules! instantiate_gemm {
                     }
                 }
             }
+
+            instantiate_gemm_cuda!($rt);
         }
     };
 
@@ -121,6 +211,8 @@ macro_rules! instantiate_gemm {
                     }
                 }
             }
+
+            instantiate_gemm_cuda!($rt);
         }
     };
     // SIMD-accelerated gemm using SimdSupported for vectorized operations along 'n' dimension
@@ -218,6 +310,8 @@ macro_rules! instantiate_gemm {
                     }
                 }
             }
+
+            instantiate_gemm_cuda!($rt);
         }
     };
 }

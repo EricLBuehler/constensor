@@ -6,6 +6,12 @@ pub enum CudaError {
     #[error(transparent)]
     Cuda(#[from] cudarc::driver::DriverError),
 
+    #[error(transparent)]
+    Compiler(#[from] cudarc::nvrtc::CompileError),
+
+    #[error(transparent)]
+    Cublas(#[from] cudarc::cublas::result::CublasError),
+
     #[error("{cuda} when loading {module_name}")]
     Load {
         cuda: cudarc::driver::DriverError,
@@ -32,13 +38,5 @@ pub trait WrapErr<O> {
 impl<O, E: Into<CudaError>> WrapErr<O> for std::result::Result<O, E> {
     fn w(self) -> std::result::Result<O, crate::Error> {
         self.map_err(|e| crate::Error::Cuda(Box::new(e.into())).bt())
-    }
-}
-
-impl<O> WrapErr<O> for std::result::Result<O, CompileError> {
-    fn w(self) -> std::result::Result<O, crate::Error> {
-        self.map_err(|e| {
-            crate::Error::Cuda(Box::new(CudaError::PtxCompileError { err: e }).into()).bt()
-        })
     }
 }

@@ -27,6 +27,13 @@ pub enum Error {
         wrapped: Box<dyn std::error::Error + Send + Sync>,
         context: String,
     },
+
+    #[error("matmul is only supported for contiguous tensors lstride: {lhs_stride:?} rstride: {rhs_stride:?} mnk: {mnk:?}")]
+    MatMulNonContiguous {
+        lhs_stride: [usize; 3],
+        rhs_stride: [usize; 3],
+        mnk: (usize, usize, usize),
+    },
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

@@ -1,3 +1,10 @@
+use cudarc::{
+    cublas::CudaBlas,
+    driver::{CudaFunction, CudaModule, CudaSlice, LaunchConfig, PushKernelArg},
+    nvrtc::{CompileOptions, Ptx},
+};
+use error::WrapErr;
+use petgraph::{algo::toposort, prelude::DiGraphMap};
 use std::{
     borrow::Cow,
     collections::HashMap,
@@ -8,13 +15,6 @@ use std::{
     path::{Path, PathBuf},
     sync::{Arc, RwLock},
 };
-mod error;
-use cudarc::{
-    driver::{CudaFunction, CudaModule, CudaSlice, LaunchConfig, PushKernelArg},
-    nvrtc::{CompileOptions, Ptx},
-};
-use error::WrapErr;
-use petgraph::{algo::toposort, prelude::DiGraphMap};
 
 use crate::{
     cpu_storage::CpuStorage,
@@ -22,6 +22,9 @@ use crate::{
     storage::{BackendDevice, BackendStorage},
     CompiledGraph, DType, GraphNode, Op, Result, Shape,
 };
+
+pub(crate) mod error;
+pub(crate) mod util;
 
 #[derive(Clone)]
 pub struct CudaDevice {
@@ -73,11 +76,24 @@ impl<T: DType> BackendStorage<T> for CudaStorage<T> {
     }
 }
 
-pub struct CudaCompiledKernel<T: DType> {
-    func: CudaFunction,
-    slice: CudaSlice<T>,
-    shape: Vec<usize>,
-    order: usize,
+pub enum CudaCompiledKernel<T: DType> {
+    /// JIT‑compiled element‑wise kernel produced by `compile_kernel`.
+    ElementWise {
+        func: CudaFunction,
+        slice: CudaSlice<T>,
+        shape: Vec<usize>,
+        order: usize,
+    },
+    /// Matrix–multiplication kernel to be executed through cuBLAS.
+    MatMul {
+        l_id: usize,
+        r_id: usize,
+        b: usize,
+        m: usize,
+        n: usize,
+        k: usize,
+        order: usize,
+    },
 }
 
 #[derive(Debug)]
@@ -202,14 +218,14 @@ impl CudaDevice {
         &self,
         func: &CudaFunction,
         data: &CudaSlice<T>,
-        shape: &Vec<usize>,
+        shape: &[usize],
     ) -> Result<CudaStorage<T>> {
         let n_elems: usize = shape.iter().product();
         let stream = self.stream();
 
         let cfg = LaunchConfig::for_num_elems(n_elems as u32);
 
-        let mut builder = stream.launch_builder(&func);
+        let mut builder = stream.launch_builder(func);
         builder.arg(data);
         builder.arg(&n_elems);
         unsafe { builder.launch(cfg).w()? };
@@ -337,29 +353,50 @@ impl BackendDevice for CudaDevice {
         // Compute topological order
         let order = toposort(&dep_graph, None).expect("Cycle detected in graph!");
 
-        // Split into groups of nodes whose input shapes and dtype match
+        let mut kernels = Vec::<CudaCompiledKernel<T>>::new();
         let mut splits: Vec<(Vec<usize>, Vec<usize>)> = Vec::new();
+
         for &idx in &order {
-            // Determine a key based on this node's input shapes
-            let shape_key: Vec<usize> = graph[idx].shape.clone();
-            let should_group = if let Some((last_group, _)) = splits.last_mut() {
-                let last_idx = *last_group.last().unwrap();
-                let last_shape_key = graph[last_idx].shape.clone();
-                last_shape_key == shape_key
-            } else {
-                false
-            };
-            if should_group {
-                splits.last_mut().unwrap().0.push(idx);
-            } else {
-                splits.push((vec![idx], shape_key));
+            match &graph[idx].op {
+                // Give every MatMul its own split
+                Op::MatMul { l_id, r_id, .. } => {
+                    let l_shape = &graph[l_id.get()].shape;
+                    let r_shape = &graph[r_id.get()].shape;
+                    assert_eq!(l_shape.len(), 3);
+                    assert_eq!(r_shape.len(), 3);
+                    let (b, m, k) = (l_shape[0], l_shape[1], l_shape[2]);
+                    let n = r_shape[2];
+                    kernels.push(CudaCompiledKernel::MatMul {
+                        l_id: l_id.get(),
+                        r_id: r_id.get(),
+                        b,
+                        m,
+                        n,
+                        k,
+                        order: idx,
+                    });
+                    continue; // don’t add this node to an element‑wise split
+                }
+                _ => {
+                    // existing element‑wise grouping logic
+                    let shape_key = graph[idx].shape.clone();
+                    let should_group = if let Some((last_group, _)) = splits.last_mut() {
+                        let last_idx = *last_group.last().unwrap();
+                        let last_shape_key = graph[last_idx].shape.clone();
+                        last_shape_key == shape_key
+                    } else {
+                        false
+                    };
+                    if should_group {
+                        splits.last_mut().unwrap().0.push(idx);
+                    } else {
+                        splits.push((vec![idx], shape_key));
+                    }
+                }
             }
         }
 
-        // For each group of nodes with matching input shapes/dtype, generate kernels
-        let mut kernels = Vec::new();
         for (sub_order, shape) in splits {
-            // build header/body for this subgraph slice
             let mut header = String::new();
             let body = handle_node(
                 &mut 0,
@@ -367,15 +404,14 @@ impl BackendDevice for CudaDevice {
                 &graph[*sub_order.last().unwrap()],
                 &graph,
             );
-            // launch a kernel for this subgroup
             let (func, slice) =
                 self.compile_kernel::<T>(header.clone(), body.clone(), shape.clone())?;
-            kernels.push(CudaCompiledKernel {
+            kernels.push(CudaCompiledKernel::ElementWise {
                 func,
                 slice,
                 shape,
                 order: *sub_order.iter().max().unwrap(),
-            })
+            });
         }
 
         Ok(CompiledGraph::Cuda {
@@ -396,16 +432,56 @@ impl BackendDevice for CudaDevice {
 
         // For each group of nodes with matching input shapes/dtype, generate and run kernels
         let mut last_storage = HashMap::new();
-        for CudaCompiledKernel {
-            func,
-            slice,
-            shape,
-            order,
-        } in kernels
-        {
-            // launch a kernel for this subgroup
-            let storage = self.run_kernel::<T>(func, slice, shape)?;
-            last_storage.insert(order, storage);
+        for kernel in kernels {
+            match kernel {
+                CudaCompiledKernel::ElementWise {
+                    func,
+                    slice,
+                    shape,
+                    order,
+                } => {
+                    let storage = self.run_kernel::<T>(func, slice, shape)?;
+                    last_storage.insert(order, storage);
+                }
+                CudaCompiledKernel::MatMul {
+                    l_id,
+                    r_id,
+                    b,
+                    m,
+                    n,
+                    k,
+                    order,
+                } => {
+                    // obtain input buffers
+                    let lhs = last_storage.get(&l_id).expect("lhs storage missing");
+                    let rhs = last_storage.get(&r_id).expect("rhs storage missing");
+
+                    // allocate output buffer
+                    let elems = { *m } * { *n };
+                    let mut out = unsafe { self.stream().alloc::<T>(elems) }.w()?;
+
+                    let cublas = CudaBlas::new(self.stream()).unwrap();
+
+                    T::launch_gemm_cuda(
+                        cublas,
+                        &lhs.slice,
+                        &rhs.slice,
+                        *b,
+                        *m,
+                        *n,
+                        *k,
+                        &mut out,
+                        T::ZERO,
+                        T::ONE,
+                    )?;
+
+                    let storage = CudaStorage {
+                        slice: out,
+                        device: self.clone(),
+                    };
+                    last_storage.insert(order, storage);
+                }
+            }
         }
 
         let key = *last_storage.keys().max().unwrap();
