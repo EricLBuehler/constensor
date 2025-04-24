@@ -113,6 +113,19 @@ macro_rules! test_for_device_int {
                 let tensor = res.to_tensor().unwrap();
                 assert_eq!(tensor.data().unwrap().to_vec(), vec![1, 2, 3, 4]);
             }
+
+            #[test]
+            fn matmul() {
+                // Test matrix multiplication of ones: (2 x 3) * (3 x 2) = (2 x 2) with each entry = 3
+                let mut graph = Graph::empty();
+                let a = GraphTensor::<R2<2, 3>, i32, $dev>::ones(&mut graph);
+                let b = GraphTensor::<R2<3, 2>, i32, $dev>::ones(&mut graph);
+                let c = a.matmul(b);
+                let tensor = c.to_tensor().unwrap();
+                // Expect a 2x2 matrix of 3.0s
+                let expected: Vec<[i32; 2]> = vec![[3, 3], [3, 3]];
+                assert_eq!(tensor.data().unwrap().to_vec(), expected);
+            }
         }
     };
 }

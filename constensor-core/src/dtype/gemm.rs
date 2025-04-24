@@ -40,9 +40,9 @@ macro_rules! instantiate_gemm {
                     for j in 0..n {
                         let mut sum = $init;
                         for p in 0..k {
-                            sum = alpha * sum + beta * lhs[i * k + p] * rhs[p * n + j];
+                            sum = sum + beta * lhs[i * k + p] * rhs[p * n + j];
                         }
-                        out[i * n + j] = sum;
+                        out[i * n + j] = alpha * out[i * n + j] + sum;
                     }
                 }
             }
