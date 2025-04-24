@@ -14,10 +14,7 @@ use std::{
 use crate::{DType, Result, Shape};
 
 use petgraph::Graph as PetGraph;
-use petgraph::{
-    dot::{Config, Dot},
-    graph::NodeIndex,
-};
+use petgraph::{dot::Dot, graph::NodeIndex};
 
 #[derive(Clone, Debug)]
 pub struct GraphNode<T: DType> {
@@ -61,9 +58,9 @@ impl<T: DType> Graph<T> {
         next
     }
 
-    pub fn to_petgraph(&self) -> PetGraph<String, ()> {
+    pub fn to_petgraph(&self) -> PetGraph<String, String> {
         let ops = self.data.read().unwrap();
-        let mut g = PetGraph::<String, ()>::new();
+        let mut g = PetGraph::<String, String>::new();
         // map from op‐index → Some(node) if we created a node, or None if it was a NoOp
         let mut idx_map: Vec<Option<NodeIndex>> = Vec::with_capacity(ops.len());
 
@@ -108,23 +105,39 @@ impl<T: DType> Graph<T> {
             match &op.op {
                 Op::BinaryOp { l_id, r_id, .. } => {
                     if let Some(src) = idx_map[l_id.get()] {
-                        g.add_edge(src, dst, ());
+                        let mut label = "l".to_string();
+                        if l_id.is_inplace() {
+                            label.push('*');
+                        }
+                        g.add_edge(src, dst, label.clone());
                     }
                     if let Some(src) = idx_map[r_id.get()] {
-                        g.add_edge(src, dst, ());
+                        let mut label = "r".to_string();
+                        if r_id.is_inplace() {
+                            label.push('*');
+                        }
+                        g.add_edge(src, dst, label.clone());
                     }
                 }
                 Op::UnaryOp { v_id, .. } => {
                     if let Some(src) = idx_map[v_id.get()] {
-                        g.add_edge(src, dst, ());
+                        let mut label = "v".to_string();
+                        if v_id.is_inplace() {
+                            label.push('*');
+                        }
+                        g.add_edge(src, dst, label.clone());
                     }
                 }
                 Op::FusedMulAdd {
                     a_id, b_id, c_id, ..
                 } => {
-                    for src_id in [a_id, b_id, c_id] {
+                    for (prefix, src_id) in [("a", a_id), ("b", b_id), ("c", c_id)].iter() {
                         if let Some(src) = idx_map[src_id.get()] {
-                            g.add_edge(src, dst, ());
+                            let mut label = prefix.to_string();
+                            if src_id.is_inplace() {
+                                label.push('*');
+                            }
+                            g.add_edge(src, dst, label.clone());
                         }
                     }
                 }
@@ -132,14 +145,26 @@ impl<T: DType> Graph<T> {
                     l_id, r_id, o_id, ..
                 } => {
                     if let Some(src) = idx_map[l_id.get()] {
-                        g.add_edge(src, dst, ());
+                        let mut label = "l".to_string();
+                        if l_id.is_inplace() {
+                            label.push('*');
+                        }
+                        g.add_edge(src, dst, label.clone());
                     }
                     if let Some(src) = idx_map[r_id.get()] {
-                        g.add_edge(src, dst, ());
+                        let mut label = "r".to_string();
+                        if r_id.is_inplace() {
+                            label.push('*');
+                        }
+                        g.add_edge(src, dst, label.clone());
                     }
                     if let Some(o_id) = o_id {
                         if let Some(src) = idx_map[o_id.get()] {
-                            g.add_edge(src, dst, ());
+                            let mut label = "o".to_string();
+                            if o_id.is_inplace() {
+                                label.push('*');
+                            }
+                            g.add_edge(src, dst, label.clone());
                         }
                     }
                 }
@@ -154,7 +179,7 @@ impl<T: DType> Graph<T> {
     /// Produce a DOT format string of this graph.
     pub fn to_dot(&self) -> String {
         let g = self.to_petgraph();
-        format!("{:?}", Dot::with_config(&g, &[Config::EdgeNoLabel]))
+        format!("{:?}", Dot::with_config(&g, &[]))
     }
 
     /// Visualize the graph by saving it to this file.
