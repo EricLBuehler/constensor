@@ -73,6 +73,13 @@ impl<T: DType> BackendStorage<T> for CudaStorage<T> {
     }
 }
 
+pub struct CudaCompiledKernel<T: DType> {
+    func: CudaFunction,
+    slice: CudaSlice<T>,
+    shape: Vec<usize>,
+    order: usize,
+}
+
 #[derive(Debug)]
 struct Name(usize);
 impl Name {
@@ -360,7 +367,12 @@ impl BackendDevice for CudaDevice {
             // launch a kernel for this subgroup
             let (func, slice) =
                 self.compile_kernel::<T>(header.clone(), body.clone(), shape.clone())?;
-            kernels.push((func, slice, shape, *sub_order.iter().max().unwrap()))
+            kernels.push(CudaCompiledKernel {
+                func,
+                slice,
+                shape,
+                order: *sub_order.iter().max().unwrap(),
+            })
         }
 
         Ok(CompiledGraph::Cuda {
@@ -381,7 +393,13 @@ impl BackendDevice for CudaDevice {
 
         // For each group of nodes with matching input shapes/dtype, generate and run kernels
         let mut last_storage = HashMap::new();
-        for (func, slice, shape, order) in kernels {
+        for CudaCompiledKernel {
+            func,
+            slice,
+            shape,
+            order,
+        } in kernels
+        {
             // launch a kernel for this subgroup
             let storage = self.run_kernel::<T>(func, slice, shape)?;
             last_storage.insert(order, storage);

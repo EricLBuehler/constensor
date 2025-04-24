@@ -458,12 +458,7 @@ pub enum CompiledGraph<S: Shape, T: DType, D: Dev> {
     },
     #[cfg(feature = "cuda")]
     Cuda {
-        kernels: Vec<(
-            cudarc::driver::CudaFunction,
-            cudarc::driver::CudaSlice<T>,
-            Vec<usize>,
-            usize,
-        )>,
+        kernels: Vec<crate::cuda_backend::CudaCompiledKernel<T>>,
         ghost: PhantomData<(S, T, D)>,
     },
 }
