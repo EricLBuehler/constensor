@@ -444,6 +444,23 @@ impl<T: DType> Graph<T> {
     }
 
     pub fn compile<S: Shape, D: Dev>(self) -> Result<CompiledGraph<S, T, D>> {
+        if self
+            .data
+            .read()
+            .unwrap()
+            .last()
+            .is_some_and(|last| last.shape != S::shape())
+        {
+            let read = self.data.read();
+            let last = read.as_ref().unwrap().last().unwrap();
+
+            crate::bail!(
+                "Graph compiled shape is {:?} does not match the last node shape {:?}!",
+                &last.shape,
+                S::shape()
+            );
+        }
+
         let device = D::resolve()?;
 
         device.compile(self.data.read().unwrap().clone())

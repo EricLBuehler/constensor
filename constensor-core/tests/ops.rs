@@ -63,7 +63,7 @@ macro_rules! test_for_device_float {
                 let a = GraphTensor::<R3<1, 2, 3>, f32, $dev>::ones(&mut graph);
                 let b = GraphTensor::<R3<1, 3, 2>, f32, $dev>::ones(&mut graph);
                 let _c = a.matmul(b);
-                let compiled: CompiledGraph<R3<1, 3, 2>, f32, $dev> = graph.compile().unwrap();
+                let compiled: CompiledGraph<R3<1, 2, 2>, f32, $dev> = graph.compile().unwrap();
                 let tensor = compiled.run().unwrap();
                 let expected: [Vec<[f32; 2]>; 1] = [vec![[3.0, 3.0], [3.0, 3.0]]];
                 assert_eq!(tensor.data().unwrap().to_vec(), expected);
@@ -76,7 +76,7 @@ macro_rules! test_for_device_float {
                 let b = GraphTensor::<R3<1, 3, 2>, f32, $dev>::ones(&mut graph);
                 let o = GraphTensor::<R3<1, 2, 2>, f32, $dev>::ones(&mut graph);
                 let _c = a.matmul_axpby(b, o, 1., 1.);
-                let compiled: CompiledGraph<R3<1, 3, 2>, f32, $dev> = graph.compile().unwrap();
+                let compiled: CompiledGraph<R3<1, 2, 2>, f32, $dev> = graph.compile().unwrap();
                 let tensor = compiled.run().unwrap();
                 let expected: [Vec<[f32; 2]>; 1] = [vec![[4.0, 4.0], [4.0, 4.0]]];
                 assert_eq!(tensor.data().unwrap().to_vec(), expected);
@@ -138,7 +138,7 @@ macro_rules! test_for_device_int {
                 let a = GraphTensor::<R3<1, 2, 3>, i32, $dev>::ones(&mut graph);
                 let b = GraphTensor::<R3<1, 3, 2>, i32, $dev>::ones(&mut graph);
                 let _c = a.matmul(b);
-                let compiled: CompiledGraph<R3<1, 3, 2>, i32, $dev> = graph.compile().unwrap();
+                let compiled: CompiledGraph<R3<1, 2, 2>, i32, $dev> = graph.compile().unwrap();
                 let tensor = compiled.run().unwrap();
                 let expected: [Vec<[i32; 2]>; 1] = [vec![[3, 3], [3, 3]]];
                 assert_eq!(tensor.data().unwrap().to_vec(), expected);
@@ -151,7 +151,7 @@ macro_rules! test_for_device_int {
                 let b = GraphTensor::<R3<1, 3, 2>, i32, $dev>::ones(&mut graph);
                 let o = GraphTensor::<R3<1, 2, 2>, i32, $dev>::ones(&mut graph);
                 let _c = a.matmul_axpby(b, o, 1, 1);
-                let compiled: CompiledGraph<R3<1, 3, 2>, i32, $dev> = graph.compile().unwrap();
+                let compiled: CompiledGraph<R3<1, 2, 2>, i32, $dev> = graph.compile().unwrap();
                 let tensor = compiled.run().unwrap();
                 let expected: [Vec<[i32; 2]>; 1] = [vec![[4, 4], [4, 4]]];
                 assert_eq!(tensor.data().unwrap().to_vec(), expected);
