@@ -146,19 +146,42 @@ macro_rules! instantiate_gemm {
                 let n_blocks = n / BLOCK_SIZE;
                 let rem = n % BLOCK_SIZE;
 
+                // SAFETY: for all the unsafe blocks below, we are checking the bounds here.
+                let lhs_len = lhs.len();
+                let rhs_len = rhs.len();
+                let out_len = out.len();
+                debug_assert_eq!(lhs_len, b * m * k);
+                debug_assert_eq!(rhs_len, b * k * n);
+                debug_assert_eq!(out_len, b * m * n);
+
                 for batch in 0..b {
-                    let lhs_p = &lhs[batch * m * k..];
-                    let rhs_p = &rhs[batch * k * n..];
-                    let out_p = &mut out[batch * m * n..];
+                    let lhs_p = unsafe {
+                        let out_ptr = lhs.as_ptr().add(batch * m * k);
+                        std::slice::from_raw_parts(out_ptr, lhs_len - batch * m * k)
+                    };
+                    let rhs_p = unsafe {
+                        let out_ptr = rhs.as_ptr().add(batch * k * n);
+                        std::slice::from_raw_parts(out_ptr, rhs_len - batch * k * n)
+                    };
+                    let out_p = unsafe {
+                        let out_ptr = out.as_mut_ptr().add(batch * m * n);
+                        std::slice::from_raw_parts_mut(out_ptr, out_len - batch * m * n)
+                    };
 
                     for i in 0..m {
                         // mutable slice for current output row
-                        let out_row = &mut out_p[i * n..i * n + n];
+                        let out_row = unsafe {
+                            let out_ptr = out_p.as_mut_ptr().add(i * n);
+                            std::slice::from_raw_parts_mut(out_ptr, n)
+                        };
                         // process full vector blocks
                         for block in 0..n_blocks {
                             let off = block * BLOCK_SIZE;
                             // initialize or scale existing output
-                            let out_chunk = &mut out_row[off..off + BLOCK_SIZE];
+                            let out_chunk = unsafe {
+                                let out_ptr = out_row.as_mut_ptr().add(off);
+                                std::slice::from_raw_parts_mut(out_ptr, BLOCK_SIZE)
+                            };
                             if beta != $init {
                                 // scale by alpha: out = alpha * out
                                 let alpha_arr = [alpha; BLOCK_SIZE];
@@ -177,7 +200,10 @@ macro_rules! instantiate_gemm {
                             for p in 0..k {
                                 let a_val = lhs_p[i * k + p];
                                 let a_arr = [a_val; BLOCK_SIZE];
-                                let b_chunk = &rhs_p[p * n + off..p * n + off + BLOCK_SIZE];
+                                let b_chunk = unsafe {
+                                    let out_ptr = rhs_p.as_ptr().add(p * n + off);
+                                    std::slice::from_raw_parts(out_ptr, BLOCK_SIZE)
+                                };
                                 <Self as SimdSupported>::fma_op_inplace_c(
                                     &a_arr, b_chunk, out_chunk,
                                 );
@@ -186,10 +212,13 @@ macro_rules! instantiate_gemm {
                         // handle remainder elements
                         if rem > 0 {
                             let off = n_blocks * BLOCK_SIZE;
-                            let out_chunk = &mut out_row[off..off + rem];
+                            let out_chunk = unsafe {
+                                let out_ptr = out_row.as_mut_ptr().add(off);
+                                std::slice::from_raw_parts_mut(out_ptr, rem)
+                            };
                             if beta != $init {
                                 for x in out_chunk.iter_mut() {
-                                    *x = alpha * *x;
+                                    *x *= alpha;
                                 }
                             } else {
                                 for x in out_chunk.iter_mut() {
@@ -199,7 +228,7 @@ macro_rules! instantiate_gemm {
                             for p in 0..k {
                                 let a_val = lhs_p[i * k + p];
                                 for j in 0..rem {
-                                    out_chunk[j] = out_chunk[j] + a_val * rhs_p[p * n + off + j];
+                                    out_chunk[j] += a_val * rhs_p[p * n + off + j];
                                 }
                             }
                         }

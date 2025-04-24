@@ -69,8 +69,13 @@ macro_rules! simd_supported {
             // Vectorized loop
             for i in 0..n_blocks {
                 let off = i * Self::BLOCK_SIZE;
-                let l_chunk = std::simd::Simd::<$t, { Self::BLOCK_SIZE }>::from_slice(&a[off..off + Self::BLOCK_SIZE]);
-                let r_chunk = std::simd::Simd::<$t, { Self::BLOCK_SIZE }>::from_slice(&b[off..off + Self::BLOCK_SIZE]);
+                // SAFETY: the invariant is upheld with the loop condition
+                let l_chunk: std::simd::Simd<$t, { Self::BLOCK_SIZE }> = unsafe {
+                    std::ptr::read_unaligned(a.as_ptr().add(off) as *const _)
+                };
+                let r_chunk: std::simd::Simd<$t, { Self::BLOCK_SIZE }> = unsafe {
+                    std::ptr::read_unaligned(b.as_ptr().add(off) as *const _)
+                };
                 let res = simd_op(l_chunk, r_chunk);
                 out[off..(off + Self::BLOCK_SIZE).min(len)].copy_from_slice(res.as_array());
             }
@@ -109,8 +114,13 @@ macro_rules! simd_supported {
             // Vectorized loop
             for i in 0..n_blocks {
                 let off = i * Self::BLOCK_SIZE;
-                let l_chunk = std::simd::Simd::<$t, { Self::BLOCK_SIZE }>::from_slice(&a[off..off + Self::BLOCK_SIZE]);
-                let r_chunk = std::simd::Simd::<$t, { Self::BLOCK_SIZE }>::from_slice(&b[off..off + Self::BLOCK_SIZE]);
+                // SAFETY: the invariant is upheld with the loop condition
+                let l_chunk: std::simd::Simd<$t, { Self::BLOCK_SIZE }> = unsafe {
+                    std::ptr::read_unaligned(a.as_ptr().add(off) as *const _)
+                };
+                let r_chunk: std::simd::Simd<$t, { Self::BLOCK_SIZE }> = unsafe {
+                    std::ptr::read_unaligned(b.as_ptr().add(off) as *const _)
+                };
                 let res = simd_op(l_chunk, r_chunk);
                 a[off..(off + Self::BLOCK_SIZE).min(len)].copy_from_slice(res.as_array());
             }
@@ -149,8 +159,13 @@ macro_rules! simd_supported {
             // Vectorized loop
             for i in 0..n_blocks {
                 let off = i * Self::BLOCK_SIZE;
-                let l_chunk = std::simd::Simd::<$t, { Self::BLOCK_SIZE }>::from_slice(&a[off..off + Self::BLOCK_SIZE]);
-                let r_chunk = std::simd::Simd::<$t, { Self::BLOCK_SIZE }>::from_slice(&b[off..off + Self::BLOCK_SIZE]);
+                // SAFETY: the invariant is upheld with the loop condition
+                let l_chunk: std::simd::Simd<$t, { Self::BLOCK_SIZE }> = unsafe {
+                    std::ptr::read_unaligned(a.as_ptr().add(off) as *const _)
+                };
+                let r_chunk: std::simd::Simd<$t, { Self::BLOCK_SIZE }> = unsafe {
+                    std::ptr::read_unaligned(b.as_ptr().add(off) as *const _)
+                };
                 let res = simd_op(l_chunk, r_chunk);
                 b[off..(off + Self::BLOCK_SIZE).min(len)].copy_from_slice(res.as_array());
             }
@@ -175,9 +190,16 @@ macro_rules! simd_supported {
                 use std::simd::StdFloat;
                 for i in 0..n_blocks {
                     let off = i * Self::BLOCK_SIZE;
-                    let a = std::simd::Simd::<$t, { Self::BLOCK_SIZE }>::from_slice(&a[off..off + Self::BLOCK_SIZE]);
-                    let b = std::simd::Simd::<$t, { Self::BLOCK_SIZE }>::from_slice(&b[off..off + Self::BLOCK_SIZE]);
-                    let c = std::simd::Simd::<$t, { Self::BLOCK_SIZE }>::from_slice(&c[off..off + Self::BLOCK_SIZE]);
+                    // SAFETY: the invariant is upheld with the loop condition
+                    let a: std::simd::Simd<$t, { Self::BLOCK_SIZE }> = unsafe {
+                        std::ptr::read_unaligned(a.as_ptr().add(off) as *const _)
+                    };
+                    let b: std::simd::Simd<$t, { Self::BLOCK_SIZE }> = unsafe {
+                        std::ptr::read_unaligned(b.as_ptr().add(off) as *const _)
+                    };
+                    let c: std::simd::Simd<$t, { Self::BLOCK_SIZE }> = unsafe {
+                        std::ptr::read_unaligned(c.as_ptr().add(off) as *const _)
+                    };
                     let res = a.mul_add(b, c);
                     out[off..off + Self::BLOCK_SIZE].copy_from_slice(res.as_array());
                 }
@@ -196,9 +218,16 @@ macro_rules! simd_supported {
                 use std::simd::StdFloat;
                 for i in 0..n_blocks {
                     let off = i * Self::BLOCK_SIZE;
-                    let ax = std::simd::Simd::<$t, { Self::BLOCK_SIZE }>::from_slice(&a[off..off + Self::BLOCK_SIZE]);
-                    let b = std::simd::Simd::<$t, { Self::BLOCK_SIZE }>::from_slice(&b[off..off + Self::BLOCK_SIZE]);
-                    let c = std::simd::Simd::<$t, { Self::BLOCK_SIZE }>::from_slice(&c[off..off + Self::BLOCK_SIZE]);
+                    // SAFETY: the invariant is upheld with the loop condition
+                    let ax: std::simd::Simd<$t, { Self::BLOCK_SIZE }> = unsafe {
+                        std::ptr::read_unaligned(a.as_ptr().add(off) as *const _)
+                    };
+                    let b: std::simd::Simd<$t, { Self::BLOCK_SIZE }> = unsafe {
+                        std::ptr::read_unaligned(b.as_ptr().add(off) as *const _)
+                    };
+                    let c: std::simd::Simd<$t, { Self::BLOCK_SIZE }> = unsafe {
+                        std::ptr::read_unaligned(c.as_ptr().add(off) as *const _)
+                    };
                     let res = ax.mul_add(b, c);
                     a[off..off + Self::BLOCK_SIZE].copy_from_slice(res.as_array());
                 }
@@ -217,9 +246,16 @@ macro_rules! simd_supported {
                 use std::simd::StdFloat;
                 for i in 0..n_blocks {
                     let off = i * Self::BLOCK_SIZE;
-                    let a = std::simd::Simd::<$t, { Self::BLOCK_SIZE }>::from_slice(&a[off..off + Self::BLOCK_SIZE]);
-                    let bx = std::simd::Simd::<$t, { Self::BLOCK_SIZE }>::from_slice(&b[off..off + Self::BLOCK_SIZE]);
-                    let c = std::simd::Simd::<$t, { Self::BLOCK_SIZE }>::from_slice(&c[off..off + Self::BLOCK_SIZE]);
+                    // SAFETY: the invariant is upheld with the loop condition
+                    let a: std::simd::Simd<$t, { Self::BLOCK_SIZE }> = unsafe {
+                        std::ptr::read_unaligned(a.as_ptr().add(off) as *const _)
+                    };
+                    let bx: std::simd::Simd<$t, { Self::BLOCK_SIZE }> = unsafe {
+                        std::ptr::read_unaligned(b.as_ptr().add(off) as *const _)
+                    };
+                    let c: std::simd::Simd<$t, { Self::BLOCK_SIZE }> = unsafe {
+                        std::ptr::read_unaligned(c.as_ptr().add(off) as *const _)
+                    };
                     let res = a.mul_add(bx, c);
                     b[off..off + Self::BLOCK_SIZE].copy_from_slice(res.as_array());
                 }
@@ -238,9 +274,16 @@ macro_rules! simd_supported {
                 use std::simd::StdFloat;
                 for i in 0..n_blocks {
                     let off = i * Self::BLOCK_SIZE;
-                    let a = std::simd::Simd::<$t, { Self::BLOCK_SIZE }>::from_slice(&a[off..off + Self::BLOCK_SIZE]);
-                    let b = std::simd::Simd::<$t, { Self::BLOCK_SIZE }>::from_slice(&b[off..off + Self::BLOCK_SIZE]);
-                    let cx = std::simd::Simd::<$t, { Self::BLOCK_SIZE }>::from_slice(&c[off..off + Self::BLOCK_SIZE]);
+                    // SAFETY: the invariant is upheld with the loop condition
+                    let a: std::simd::Simd<$t, { Self::BLOCK_SIZE }> = unsafe {
+                        std::ptr::read_unaligned(a.as_ptr().add(off) as *const _)
+                    };
+                    let b: std::simd::Simd<$t, { Self::BLOCK_SIZE }> = unsafe {
+                        std::ptr::read_unaligned(b.as_ptr().add(off) as *const _)
+                    };
+                    let cx: std::simd::Simd<$t, { Self::BLOCK_SIZE }> = unsafe {
+                        std::ptr::read_unaligned(c.as_ptr().add(off) as *const _)
+                    };
                     let res = a.mul_add(b, cx);
                     c[off..off + Self::BLOCK_SIZE].copy_from_slice(res.as_array());
                 }
@@ -263,9 +306,16 @@ macro_rules! simd_supported {
 
                 for i in 0..n_blocks {
                     let off = i * Self::BLOCK_SIZE;
-                    let a = std::simd::Simd::<$t, { Self::BLOCK_SIZE }>::from_slice(&a[off..off + Self::BLOCK_SIZE]);
-                    let b = std::simd::Simd::<$t, { Self::BLOCK_SIZE }>::from_slice(&b[off..off + Self::BLOCK_SIZE]);
-                    let c = std::simd::Simd::<$t, { Self::BLOCK_SIZE }>::from_slice(&c[off..off + Self::BLOCK_SIZE]);
+                    // SAFETY: the invariant is upheld with the loop condition
+                    let a: std::simd::Simd<$t, { Self::BLOCK_SIZE }> = unsafe {
+                        std::ptr::read_unaligned(a.as_ptr().add(off) as *const _)
+                    };
+                    let b: std::simd::Simd<$t, { Self::BLOCK_SIZE }> = unsafe {
+                        std::ptr::read_unaligned(b.as_ptr().add(off) as *const _)
+                    };
+                    let c: std::simd::Simd<$t, { Self::BLOCK_SIZE }> = unsafe {
+                        std::ptr::read_unaligned(c.as_ptr().add(off) as *const _)
+                    };
                     let res = a * b + c;
                     out[off..off + Self::BLOCK_SIZE].copy_from_slice(res.as_array());
                 }
@@ -283,9 +333,16 @@ macro_rules! simd_supported {
 
                 for i in 0..n_blocks {
                     let off = i * Self::BLOCK_SIZE;
-                    let ax = std::simd::Simd::<$t, { Self::BLOCK_SIZE }>::from_slice(&a[off..off + Self::BLOCK_SIZE]);
-                    let b = std::simd::Simd::<$t, { Self::BLOCK_SIZE }>::from_slice(&b[off..off + Self::BLOCK_SIZE]);
-                    let c = std::simd::Simd::<$t, { Self::BLOCK_SIZE }>::from_slice(&c[off..off + Self::BLOCK_SIZE]);
+                    // SAFETY: the invariant is upheld with the loop condition
+                    let ax: std::simd::Simd<$t, { Self::BLOCK_SIZE }> = unsafe {
+                        std::ptr::read_unaligned(a.as_ptr().add(off) as *const _)
+                    };
+                    let b: std::simd::Simd<$t, { Self::BLOCK_SIZE }> = unsafe {
+                        std::ptr::read_unaligned(b.as_ptr().add(off) as *const _)
+                    };
+                    let c: std::simd::Simd<$t, { Self::BLOCK_SIZE }> = unsafe {
+                        std::ptr::read_unaligned(c.as_ptr().add(off) as *const _)
+                    };
                     let res = ax * b + c;
                     a[off..off + Self::BLOCK_SIZE].copy_from_slice(res.as_array());
                 }
@@ -303,9 +360,16 @@ macro_rules! simd_supported {
 
                 for i in 0..n_blocks {
                     let off = i * Self::BLOCK_SIZE;
-                    let a = std::simd::Simd::<$t, { Self::BLOCK_SIZE }>::from_slice(&a[off..off + Self::BLOCK_SIZE]);
-                    let bx = std::simd::Simd::<$t, { Self::BLOCK_SIZE }>::from_slice(&b[off..off + Self::BLOCK_SIZE]);
-                    let c = std::simd::Simd::<$t, { Self::BLOCK_SIZE }>::from_slice(&c[off..off + Self::BLOCK_SIZE]);
+                    // SAFETY: the invariant is upheld with the loop condition
+                    let a: std::simd::Simd<$t, { Self::BLOCK_SIZE }> = unsafe {
+                        std::ptr::read_unaligned(a.as_ptr().add(off) as *const _)
+                    };
+                    let bx: std::simd::Simd<$t, { Self::BLOCK_SIZE }> = unsafe {
+                        std::ptr::read_unaligned(b.as_ptr().add(off) as *const _)
+                    };
+                    let c: std::simd::Simd<$t, { Self::BLOCK_SIZE }> = unsafe {
+                        std::ptr::read_unaligned(c.as_ptr().add(off) as *const _)
+                    };
                     let res = a * bx + c;
                     b[off..off + Self::BLOCK_SIZE].copy_from_slice(res.as_array());
                 }
@@ -323,9 +387,16 @@ macro_rules! simd_supported {
 
                 for i in 0..n_blocks {
                     let off = i * Self::BLOCK_SIZE;
-                    let a = std::simd::Simd::<$t, { Self::BLOCK_SIZE }>::from_slice(&a[off..off + Self::BLOCK_SIZE]);
-                    let b = std::simd::Simd::<$t, { Self::BLOCK_SIZE }>::from_slice(&b[off..off + Self::BLOCK_SIZE]);
-                    let cx = std::simd::Simd::<$t, { Self::BLOCK_SIZE }>::from_slice(&c[off..off + Self::BLOCK_SIZE]);
+                    // SAFETY: the invariant is upheld with the loop condition
+                    let a: std::simd::Simd<$t, { Self::BLOCK_SIZE }> = unsafe {
+                        std::ptr::read_unaligned(a.as_ptr().add(off) as *const _)
+                    };
+                    let b: std::simd::Simd<$t, { Self::BLOCK_SIZE }> = unsafe {
+                        std::ptr::read_unaligned(b.as_ptr().add(off) as *const _)
+                    };
+                    let cx: std::simd::Simd<$t, { Self::BLOCK_SIZE }> = unsafe {
+                        std::ptr::read_unaligned(c.as_ptr().add(off) as *const _)
+                    };
                     let res = a * b + cx;
                     c[off..off + Self::BLOCK_SIZE].copy_from_slice(res.as_array());
                 }
