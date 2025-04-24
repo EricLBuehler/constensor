@@ -3,7 +3,7 @@ use crate::cuda_backend::CudaDevice;
 use crate::{
     cpu_storage::CpuDevice,
     storage::{BackendDevice, Storage},
-    DType, GraphNode, Result,
+    CompiledGraph, DType, GraphNode, Result, Shape,
 };
 
 /// Marker trait for devices
@@ -66,11 +66,25 @@ pub enum Device {
 }
 
 impl Device {
-    pub fn compile_and_run_graph<T: DType>(&self, graph: &[GraphNode<T>]) -> Result<Storage<T>> {
+    pub fn run_graph<S: Shape, T: DType, D: Dev>(
+        &self,
+        graph: &CompiledGraph<S, T, D>,
+    ) -> Result<Storage<T>> {
         match self {
             #[cfg(feature = "cuda")]
-            Self::Cuda(cuda) => Ok(Storage::Cuda(cuda.compile_and_run_graph::<T>(graph)?)),
-            Self::Cpu => Ok(Storage::Cpu(CpuDevice.compile_and_run_graph::<T>(graph)?)),
+            Self::Cuda(cuda) => Ok(Storage::Cuda(cuda.run_graph::<S, T, D>(graph)?)),
+            Self::Cpu => Ok(Storage::Cpu(CpuDevice.run_graph::<S, T, D>(graph)?)),
+        }
+    }
+
+    pub fn compile<S: Shape, T: DType, D: Dev>(
+        &self,
+        graph: Vec<GraphNode<T>>,
+    ) -> Result<CompiledGraph<S, T, D>> {
+        match self {
+            #[cfg(feature = "cuda")]
+            Self::Cuda(cuda) => cuda.compile::<S, T, D>(graph),
+            Self::Cpu => CpuDevice.compile::<S, T, D>(graph),
         }
     }
 }

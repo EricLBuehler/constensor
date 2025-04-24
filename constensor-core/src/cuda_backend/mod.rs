@@ -3,6 +3,7 @@ use std::{
     collections::HashMap,
     fs,
     hash::{DefaultHasher, Hash, Hasher},
+    marker::PhantomData,
     ops::Deref,
     path::{Path, PathBuf},
     sync::{Arc, RwLock},
@@ -17,8 +18,9 @@ use petgraph::{algo::toposort, prelude::DiGraphMap};
 
 use crate::{
     cpu_storage::CpuStorage,
+    device::Dev,
     storage::{BackendDevice, BackendStorage},
-    DType, GraphNode, Op, Result,
+    CompiledGraph, DType, GraphNode, Op, Result, Shape,
 };
 
 #[derive(Clone)]
@@ -186,12 +188,34 @@ fn compile_ptx(template_kernel: String) -> Result<Ptx> {
 }
 
 impl CudaDevice {
-    fn run_graph<T: DType>(
+    fn run_kernel<T: DType>(
+        &self,
+        func: &CudaFunction,
+        data: &CudaSlice<T>,
+        shape: &Vec<usize>,
+    ) -> Result<CudaStorage<T>> {
+        let n_elems: usize = shape.iter().product();
+        let stream = self.stream();
+
+        let cfg = LaunchConfig::for_num_elems(n_elems as u32);
+
+        let mut builder = stream.launch_builder(&func);
+        builder.arg(data);
+        builder.arg(&n_elems);
+        unsafe { builder.launch(cfg).w()? };
+
+        Ok(CudaStorage {
+            slice: data.clone(),
+            device: self.clone(),
+        })
+    }
+
+    fn compile_kernel<T: DType>(
         &self,
         header: String,
         body: String,
         shape: Vec<usize>,
-    ) -> Result<CudaStorage<T>> {
+    ) -> Result<(CudaFunction, CudaSlice<T>)> {
         // Module name is based on hash of body and header
         let mut hasher = DefaultHasher::new();
         body.hash(&mut hasher);
@@ -260,24 +284,17 @@ impl CudaDevice {
 
         let func = self.load_func(&function_name, ptx)?;
 
-        let cfg = LaunchConfig::for_num_elems(n_elems as u32);
-
-        let mut builder = stream.launch_builder(&func);
-        builder.arg(&data);
-        builder.arg(&n_elems);
-        unsafe { builder.launch(cfg).w()? };
-
-        Ok(CudaStorage {
-            slice: data,
-            device: self.clone(),
-        })
+        Ok((func, data))
     }
 }
 
 impl BackendDevice for CudaDevice {
     type Storage<X: DType> = CudaStorage<X>;
 
-    fn compile_and_run_graph<T: DType>(&self, graph: &[GraphNode<T>]) -> Result<Self::Storage<T>> {
+    fn compile<S: Shape, T: DType, D: Dev>(
+        &self,
+        graph: Vec<GraphNode<T>>,
+    ) -> Result<CompiledGraph<S, T, D>> {
         // Build a dependency graph of tensor indices
         let mut dep_graph = DiGraphMap::<usize, ()>::new();
         for idx in 0..graph.len() {
@@ -329,8 +346,8 @@ impl BackendDevice for CudaDevice {
             }
         }
 
-        // For each group of nodes with matching input shapes/dtype, generate and run kernels
-        let mut last_storage = HashMap::new();
+        // For each group of nodes with matching input shapes/dtype, generate kernels
+        let mut kernels = Vec::new();
         for (sub_order, shape) in splits {
             // build header/body for this subgraph slice
             let mut header = String::new();
@@ -338,11 +355,36 @@ impl BackendDevice for CudaDevice {
                 &mut 0,
                 &mut header,
                 &graph[*sub_order.last().unwrap()],
-                graph,
+                &graph,
             );
             // launch a kernel for this subgroup
-            let storage = self.run_graph::<T>(header.clone(), body.clone(), shape)?;
-            last_storage.insert(*sub_order.iter().max().unwrap(), storage);
+            let (func, slice) =
+                self.compile_kernel::<T>(header.clone(), body.clone(), shape.clone())?;
+            kernels.push((func, slice, shape, *sub_order.iter().max().unwrap()))
+        }
+
+        Ok(CompiledGraph::Cuda {
+            kernels,
+            ghost: PhantomData,
+        })
+    }
+
+    fn run_graph<S: Shape, T: DType, D: Dev>(
+        &self,
+        graph: &CompiledGraph<S, T, D>,
+    ) -> Result<Self::Storage<T>> {
+        #[allow(irrefutable_let_patterns)]
+        let CompiledGraph::Cuda { kernels, ghost: _ } = graph
+        else {
+            unreachable!()
+        };
+
+        // For each group of nodes with matching input shapes/dtype, generate and run kernels
+        let mut last_storage = HashMap::new();
+        for (func, slice, shape, order) in kernels {
+            // launch a kernel for this subgroup
+            let storage = self.run_kernel::<T>(func, slice, shape)?;
+            last_storage.insert(order, storage);
         }
 
         let key = *last_storage.keys().max().unwrap();

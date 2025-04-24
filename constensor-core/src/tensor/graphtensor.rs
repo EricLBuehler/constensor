@@ -7,8 +7,7 @@ use std::{
 use crate::{
     device::Dev,
     graph::{BinaryOpType, Graph, GraphTensorId, Op, UnaryOpType},
-    tensor::concretetensor::from_storage,
-    DType, Result, Shape, Tensor, R1, R3,
+    DType, Shape, R1, R3,
 };
 
 /// A tensor representing an intermediary result of a graph. Performing operations
@@ -125,16 +124,6 @@ impl<S: Shape, T: DType, D: Dev> GraphTensor<S, T, D> {
     /// Get the graph tensor ID.
     pub fn id(&self) -> GraphTensorId {
         self.id.clone()
-    }
-
-    /// Convert this `GraphTensor` into a concrete `Tensor`.
-    pub fn to_tensor(self) -> Result<Tensor<S, T, D>> {
-        let graph = self.graph.read().unwrap();
-        let nodes = &*graph.get_ops();
-
-        let device = D::resolve()?;
-        let storage = device.compile_and_run_graph::<T>(nodes)?;
-        Ok(from_storage(Arc::new(storage)))
     }
 }
 
