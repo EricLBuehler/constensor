@@ -199,7 +199,14 @@ impl BackendDevice for CpuDevice {
                         }
                     }
                     // Matrix multiplication: multiply two 2D tensors A (m x k) and B (k x n)
-                    Op::MatMul { l_id, r_id, k } => {
+                    Op::MatMul {
+                        l_id,
+                        r_id,
+                        o_id,
+                        k,
+                        alpha,
+                        beta,
+                    } => {
                         let l_idx = <&GraphTensorId as Into<usize>>::into(l_id);
                         let r_idx = <&GraphTensorId as Into<usize>>::into(r_id);
                         let a_buf = results[l_idx].as_ref().unwrap();
@@ -210,9 +217,17 @@ impl BackendDevice for CpuDevice {
                         let b = shape[0];
                         let m = shape[1];
                         let n = shape[2];
-                        let mut out = pool.borrow_mut().get_buffer(m * n);
-                        // Compute matrix multiplication: out[i,j] = sum_p a_data[i,k] * b_data[k,j]
-                        T::launch_gemm(a_buf, b_buf, b, m, n, *k, &mut out, T::ZERO, T::ONE);
+
+                        let mut out = if let Some(o_id) = o_id {
+                            let o_idx = <&GraphTensorId as Into<usize>>::into(o_id);
+                            let o_buf = results[o_idx].as_ref().unwrap();
+                            (*o_buf).clone()
+                        } else {
+                            pool.borrow_mut().get_buffer(m * n)
+                        };
+
+                        T::launch_gemm(a_buf, b_buf, b, m, n, *k, &mut out, *alpha, *beta);
+
                         PooledBuffer::new(out, pool.clone())
                     }
                     Op::NoOp => unreachable!("NoOp should not be evaluated."),

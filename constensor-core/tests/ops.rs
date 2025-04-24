@@ -61,8 +61,19 @@ macro_rules! test_for_device_float {
                 let b = GraphTensor::<R3<1, 3, 2>, f32, $dev>::ones(&mut graph);
                 let c = a.matmul(b);
                 let tensor = c.to_tensor().unwrap();
-                // Expect a 2x2 matrix of 3.0s
                 let expected: [Vec<[f32; 2]>; 1] = [vec![[3.0, 3.0], [3.0, 3.0]]];
+                assert_eq!(tensor.data().unwrap().to_vec(), expected);
+            }
+
+            #[test]
+            fn matmul_axpby() {
+                let mut graph = Graph::empty();
+                let a = GraphTensor::<R3<1, 2, 3>, f32, $dev>::ones(&mut graph);
+                let b = GraphTensor::<R3<1, 3, 2>, f32, $dev>::ones(&mut graph);
+                let o = GraphTensor::<R3<1, 2, 2>, f32, $dev>::ones(&mut graph);
+                let c = a.matmul_axpby(b, o, 1., 1.);
+                let tensor = c.to_tensor().unwrap();
+                let expected: [Vec<[f32; 2]>; 1] = [vec![[4.0, 4.0], [4.0, 4.0]]];
                 assert_eq!(tensor.data().unwrap().to_vec(), expected);
             }
         }
@@ -120,8 +131,19 @@ macro_rules! test_for_device_int {
                 let b = GraphTensor::<R3<1, 3, 2>, i32, $dev>::ones(&mut graph);
                 let c = a.matmul(b);
                 let tensor = c.to_tensor().unwrap();
-                // Expect a 2x2 matrix of 3.0s
                 let expected: [Vec<[i32; 2]>; 1] = [vec![[3, 3], [3, 3]]];
+                assert_eq!(tensor.data().unwrap().to_vec(), expected);
+            }
+
+            #[test]
+            fn matmul_axpby() {
+                let mut graph = Graph::empty();
+                let a = GraphTensor::<R3<1, 2, 3>, i32, $dev>::ones(&mut graph);
+                let b = GraphTensor::<R3<1, 3, 2>, i32, $dev>::ones(&mut graph);
+                let o = GraphTensor::<R3<1, 2, 2>, i32, $dev>::ones(&mut graph);
+                let c = a.matmul_axpby(b, o, 1, 1);
+                let tensor = c.to_tensor().unwrap();
+                let expected: [Vec<[i32; 2]>; 1] = [vec![[4, 4], [4, 4]]];
                 assert_eq!(tensor.data().unwrap().to_vec(), expected);
             }
         }

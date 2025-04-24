@@ -569,12 +569,15 @@ pub enum Op<T: DType> {
         b_id: GraphTensorId,
         c_id: GraphTensorId,
     },
-    /// Matrix multiplication: l_id (A x B) * r_id (B x C) -> (A x C)
+    /// (B x M x K) * (B x K x N) = (B x M x N)
+    /// out = out * alpha + beta * lhs * rhs
     MatMul {
         l_id: GraphTensorId,
         r_id: GraphTensorId,
-        /// Inner dimension B
+        o_id: Option<GraphTensorId>,
         k: usize,
+        alpha: T,
+        beta: T,
     },
     NoOp,
 }

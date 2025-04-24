@@ -54,7 +54,7 @@ macro_rules! instantiate_gemm {
         }
     };
 
-    ($rt:ident, GEMM) => {
+    ($rt:ident, $zero:expr,  GEMM) => {
         impl GemmDispatch for $rt {
             fn launch_gemm(
                 lhs: &[Self],
@@ -86,6 +86,8 @@ macro_rules! instantiate_gemm {
                 let rhs_cs = 1;
                 let rhs_rs = n;
 
+                let read_dst = alpha != $zero;
+
                 for b in 0..b {
                     let lhs_p = &lhs[b * m * k..];
                     let rhs_p = &rhs[b * k * n..];
@@ -99,7 +101,7 @@ macro_rules! instantiate_gemm {
                             /* dst: *mut T = */ out_p.as_mut_ptr(),
                             /* dst_cs: isize = */ dst_cs as isize,
                             /* dst_rs: isize = */ dst_rs as isize,
-                            /* read_dst: bool = */ false,
+                            /* read_dst: bool = */ read_dst,
                             /* lhs: *const T = */ lhs_p.as_ptr(),
                             /* lhs_cs: isize = */ lhs_cs as isize,
                             /* lhs_rs: isize = */ lhs_rs as isize,
@@ -124,9 +126,9 @@ instantiate_gemm!(u8, 0, NAIVE);
 instantiate_gemm!(u32, 0, NAIVE);
 instantiate_gemm!(i32, 0, NAIVE);
 instantiate_gemm!(i64, 0, NAIVE);
-instantiate_gemm!(f32, GEMM);
-instantiate_gemm!(f64, GEMM);
+instantiate_gemm!(f32, 0., GEMM);
+instantiate_gemm!(f64, 0., GEMM);
 #[cfg(feature = "bfloat")]
 instantiate_gemm!(bf16, bf16::from_f32(0.), NAIVE);
 #[cfg(feature = "half")]
-instantiate_gemm!(f16, GEMM);
+instantiate_gemm!(f16, f16::from_f32(0.), GEMM);

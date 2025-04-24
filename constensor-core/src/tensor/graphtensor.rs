@@ -35,7 +35,38 @@ impl<const B: usize, const M: usize, const K: usize, T: DType, D: Dev>
             .add_op::<R3<B, M, N>>(Op::MatMul {
                 l_id: self.id(),
                 r_id: rhs.id(),
+                o_id: None,
                 k: K,
+                alpha: T::ZERO,
+                beta: T::ONE,
+            });
+        GraphTensor {
+            id: self.graph.write().unwrap().next_id(),
+            graph: self.graph.clone(),
+            _ghost: PhantomData,
+        }
+    }
+
+    #[must_use]
+    // Matrix multiplication: (B x M x K) * (B x K x N) = (B x M x N)
+    /// out = out * alpha + beta * lhs * rhs
+    pub fn matmul_axpby<const N: usize>(
+        self,
+        rhs: GraphTensor<R3<B, K, N>, T, D>,
+        out: GraphTensor<R3<B, M, N>, T, D>,
+        alpha: T,
+        beta: T,
+    ) -> GraphTensor<R3<B, M, N>, T, D> {
+        self.graph
+            .write()
+            .unwrap()
+            .add_op::<R3<B, M, N>>(Op::MatMul {
+                l_id: self.id(),
+                r_id: rhs.id(),
+                o_id: Some(out.id()),
+                k: K,
+                alpha,
+                beta,
             });
         GraphTensor {
             id: self.graph.write().unwrap().next_id(),
