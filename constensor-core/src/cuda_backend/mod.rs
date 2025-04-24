@@ -7,7 +7,7 @@ use error::WrapErr;
 use petgraph::{algo::toposort, prelude::DiGraphMap};
 use std::{
     borrow::Cow,
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     fs,
     hash::{DefaultHasher, Hash, Hasher},
     marker::PhantomData,
@@ -353,12 +353,21 @@ impl BackendDevice for CudaDevice {
         // Compute topological order
         let order = toposort(&dep_graph, None).expect("Cycle detected in graph!");
 
+        // New kernel and grouping logic with matmul input tracking
         let mut kernels = Vec::<CudaCompiledKernel<T>>::new();
+        let mut matmuls = Vec::<CudaCompiledKernel<T>>::new();
         let mut splits: Vec<(Vec<usize>, Vec<usize>)> = Vec::new();
+        // Collect all matmul input node indices
+        let mut matmul_inputs = HashSet::new();
+        for &idx in &order {
+            if let Op::MatMul { l_id, r_id, .. } = &graph[idx].op {
+                matmul_inputs.insert(l_id.get());
+                matmul_inputs.insert(r_id.get());
+            }
+        }
 
         for &idx in &order {
             match &graph[idx].op {
-                // Give every MatMul its own split
                 Op::MatMul { l_id, r_id, .. } => {
                     let l_shape = &graph[l_id.get()].shape;
                     let r_shape = &graph[r_id.get()].shape;
@@ -366,7 +375,7 @@ impl BackendDevice for CudaDevice {
                     assert_eq!(r_shape.len(), 3);
                     let (b, m, k) = (l_shape[0], l_shape[1], l_shape[2]);
                     let n = r_shape[2];
-                    kernels.push(CudaCompiledKernel::MatMul {
+                    matmuls.push(CudaCompiledKernel::MatMul {
                         l_id: l_id.get(),
                         r_id: r_id.get(),
                         b,
@@ -375,15 +384,13 @@ impl BackendDevice for CudaDevice {
                         k,
                         order: idx,
                     });
-                    continue; // don’t add this node to an element‑wise split
                 }
                 _ => {
-                    // existing element‑wise grouping logic
                     let shape_key = graph[idx].shape.clone();
                     let should_group = if let Some((last_group, _)) = splits.last_mut() {
                         let last_idx = *last_group.last().unwrap();
                         let last_shape_key = graph[last_idx].shape.clone();
-                        last_shape_key == shape_key
+                        last_shape_key == shape_key && !matmul_inputs.contains(&idx)
                     } else {
                         false
                     };
@@ -396,6 +403,7 @@ impl BackendDevice for CudaDevice {
             }
         }
 
+        // Compile element‑wise splits first so matmul inputs are ready
         for (sub_order, shape) in splits {
             let mut header = String::new();
             let body = handle_node(
@@ -413,6 +421,8 @@ impl BackendDevice for CudaDevice {
                 order: *sub_order.iter().max().unwrap(),
             });
         }
+        // Then append all MatMul kernels
+        kernels.extend(matmuls);
 
         Ok(CompiledGraph::Cuda {
             kernels,
