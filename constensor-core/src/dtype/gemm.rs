@@ -141,49 +141,32 @@ macro_rules! instantiate_gemm {
             {
                 use crate::dtype::SimdSupported;
                 use crate::graph::BinaryOpType;
-                // number of lanes for vectorization
                 const BLOCK_SIZE: usize = <$rt as SimdSupported>::BLOCK_SIZE;
                 let n_blocks = n / BLOCK_SIZE;
                 let rem = n % BLOCK_SIZE;
 
-                // SAFETY: for all the unsafe blocks below, we are checking the bounds here.
-                let lhs_len = lhs.len();
-                let rhs_len = rhs.len();
-                let out_len = out.len();
-                debug_assert_eq!(lhs_len, b * m * k);
-                debug_assert_eq!(rhs_len, b * k * n);
-                debug_assert_eq!(out_len, b * m * n);
+                debug_assert_eq!(lhs.len(), b * m * k);
+                debug_assert_eq!(rhs.len(), b * k * n);
+                debug_assert_eq!(out.len(), b * m * n);
 
                 for batch in 0..b {
-                    let lhs_p = unsafe {
-                        let out_ptr = lhs.as_ptr().add(batch * m * k);
-                        std::slice::from_raw_parts(out_ptr, lhs_len - batch * m * k)
-                    };
-                    let rhs_p = unsafe {
-                        let out_ptr = rhs.as_ptr().add(batch * k * n);
-                        std::slice::from_raw_parts(out_ptr, rhs_len - batch * k * n)
-                    };
-                    let out_p = unsafe {
-                        let out_ptr = out.as_mut_ptr().add(batch * m * n);
-                        std::slice::from_raw_parts_mut(out_ptr, out_len - batch * m * n)
-                    };
+                    // Compute base pointers once per batch
+                    let lhs_base = unsafe { lhs.as_ptr().add(batch * m * k) };
+                    let rhs_base = unsafe { rhs.as_ptr().add(batch * k * n) };
+                    let out_base = unsafe { out.as_mut_ptr().add(batch * m * n) };
 
                     for i in 0..m {
-                        // mutable slice for current output row
-                        let out_row = unsafe {
-                            let out_ptr = out_p.as_mut_ptr().add(i * n);
-                            std::slice::from_raw_parts_mut(out_ptr, n)
-                        };
-                        // process full vector blocks
+                        // Pointer to the start of the current output row
+                        let out_row_ptr = unsafe { out_base.add(i * n) };
+
+                        // Process full SIMD blocks
                         for block in 0..n_blocks {
                             let off = block * BLOCK_SIZE;
-                            // initialize or scale existing output
-                            let out_chunk = unsafe {
-                                let out_ptr = out_row.as_mut_ptr().add(off);
-                                std::slice::from_raw_parts_mut(out_ptr, BLOCK_SIZE)
-                            };
+                            let out_ptr = unsafe { out_row_ptr.add(off) };
+                            let out_chunk =
+                                unsafe { std::slice::from_raw_parts_mut(out_ptr, BLOCK_SIZE) };
+
                             if beta != $init {
-                                // scale by alpha: out = alpha * out
                                 let alpha_arr = [alpha; BLOCK_SIZE];
                                 <Self as SimdSupported>::binary_simd_op_inplace_lhs(
                                     out_chunk,
@@ -191,31 +174,29 @@ macro_rules! instantiate_gemm {
                                     BinaryOpType::Mul,
                                 );
                             } else {
-                                // initialize to zero
                                 for x in out_chunk.iter_mut() {
                                     *x = $init;
                                 }
                             }
-                            // accumulate dot-product contributions
+
                             for p in 0..k {
-                                let a_val = lhs_p[i * k + p];
+                                let a_val = unsafe { *lhs_base.add(i * k + p) };
                                 let a_arr = [a_val; BLOCK_SIZE];
-                                let b_chunk = unsafe {
-                                    let out_ptr = rhs_p.as_ptr().add(p * n + off);
-                                    std::slice::from_raw_parts(out_ptr, BLOCK_SIZE)
-                                };
+                                let b_ptr = unsafe { rhs_base.add(p * n + off) };
+                                let b_chunk =
+                                    unsafe { std::slice::from_raw_parts(b_ptr, BLOCK_SIZE) };
                                 <Self as SimdSupported>::fma_op_inplace_c(
                                     &a_arr, b_chunk, out_chunk,
                                 );
                             }
                         }
-                        // handle remainder elements
+
+                        // Handle remainder elements
                         if rem > 0 {
                             let off = n_blocks * BLOCK_SIZE;
-                            let out_chunk = unsafe {
-                                let out_ptr = out_row.as_mut_ptr().add(off);
-                                std::slice::from_raw_parts_mut(out_ptr, rem)
-                            };
+                            let out_ptr = unsafe { out_row_ptr.add(off) };
+                            let out_chunk = unsafe { std::slice::from_raw_parts_mut(out_ptr, rem) };
+
                             if beta != $init {
                                 for x in out_chunk.iter_mut() {
                                     *x *= alpha;
@@ -225,10 +206,12 @@ macro_rules! instantiate_gemm {
                                     *x = $init;
                                 }
                             }
+
                             for p in 0..k {
-                                let a_val = lhs_p[i * k + p];
+                                let a_val = unsafe { *lhs_base.add(i * k + p) };
                                 for j in 0..rem {
-                                    out_chunk[j] += a_val * rhs_p[p * n + off + j];
+                                    let b_val = unsafe { *rhs_base.add(p * n + off + j) };
+                                    out_chunk[j] += a_val * b_val;
                                 }
                             }
                         }
