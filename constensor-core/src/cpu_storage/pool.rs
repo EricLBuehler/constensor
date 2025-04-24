@@ -22,6 +22,7 @@ pub struct PoolMetrics {
     pub drops: usize,
 }
 
+#[derive(Debug)]
 /// A simple buffer pool to reuse Vec allocations across graph evaluation.
 pub struct BufferPool<T> {
     pool: Vec<Vec<T>>,
@@ -32,6 +33,7 @@ pub struct BufferPool<T> {
 /// Shared reference to a BufferPool for automatic recycling.
 pub type SharedPool<T> = Rc<RefCell<BufferPool<T>>>;
 
+#[derive(Debug)]
 /// Wrapper around Vec<T> that returns its buffer to the pool on drop.
 pub struct PooledBuffer<T: DType> {
     buf: Vec<T>,

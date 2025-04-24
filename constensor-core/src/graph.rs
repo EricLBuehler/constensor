@@ -222,7 +222,7 @@ impl<T: DType> Graph<T> {
                         };
 
                         // Look for ops which actually use this one
-                        for user in ops.iter() {
+                        for user in new_ops.iter() {
                             let ids = match &user.op {
                                 Op::Arange {
                                     start: _,
@@ -243,14 +243,16 @@ impl<T: DType> Graph<T> {
                                 Op::MatMul { l_id, r_id, .. } => vec![l_id, r_id],
                                 Op::NoOp => vec![],
                             };
+
+                            // We are going to remove the noop so this is necessary to fix the indices.
                             let used_ids = ids
                                 .into_iter()
-                                .filter(|id| id.get() != y_id)
+                                .filter(|id| id.get() == y_id)
                                 .collect::<Vec<_>>();
                             if !used_ids.is_empty() {
                                 for id in used_ids {
                                     // Tell the ops which use the result of the fma to source from there
-                                    id.set(y_id);
+                                    id.set(x_id);
                                 }
                             }
                         }
@@ -330,46 +332,6 @@ impl<T: DType> Graph<T> {
                         },
                         shape: op.shape.clone(),
                     };
-                    // Update all future uses of this op's result (index i) to use 'target'.
-                    for fut in new_ops.iter_mut().skip(i + 1) {
-                        match &fut.op {
-                            Op::BinaryOp { l_id, r_id, .. } => {
-                                if l_id.get() == i {
-                                    l_id.set(target.get());
-                                }
-                                if r_id.get() == i {
-                                    r_id.set(target.get());
-                                }
-                            }
-                            Op::UnaryOp { v_id, .. } => {
-                                if v_id.get() == i {
-                                    v_id.set(target.get());
-                                }
-                            }
-                            Op::FusedMulAdd {
-                                a_id, b_id, c_id, ..
-                            } => {
-                                if a_id.get() == i {
-                                    a_id.set(target.get());
-                                }
-                                if b_id.get() == i {
-                                    b_id.set(target.get());
-                                }
-                                if c_id.get() == i {
-                                    c_id.set(target.get());
-                                }
-                            }
-                            Op::MatMul { l_id, r_id, .. } => {
-                                if l_id.get() == i {
-                                    l_id.set(target.get());
-                                }
-                                if r_id.get() == i {
-                                    r_id.set(target.get());
-                                }
-                            }
-                            Op::NoOp | Op::Fill { .. } | Op::Arange { .. } => {}
-                        }
-                    }
                 }
             }
         }
@@ -403,46 +365,6 @@ impl<T: DType> Graph<T> {
                         },
                         shape: op.shape.clone(),
                     };
-                    // Update all future ops that reference the original index i
-                    for fut in new_ops.iter_mut().skip(i + 1) {
-                        match &fut.op {
-                            Op::BinaryOp { l_id, r_id, .. } => {
-                                if l_id.get() == i {
-                                    l_id.set(out.get());
-                                }
-                                if r_id.get() == i {
-                                    r_id.set(out.get());
-                                }
-                            }
-                            Op::UnaryOp { v_id, .. } => {
-                                if v_id.get() == i {
-                                    v_id.set(out.get());
-                                }
-                            }
-                            Op::FusedMulAdd {
-                                a_id, b_id, c_id, ..
-                            } => {
-                                if a_id.get() == i {
-                                    a_id.set(out.get());
-                                }
-                                if b_id.get() == i {
-                                    b_id.set(out.get());
-                                }
-                                if c_id.get() == i {
-                                    c_id.set(out.get());
-                                }
-                            }
-                            Op::MatMul { l_id, r_id, .. } => {
-                                if l_id.get() == i {
-                                    l_id.set(out.get());
-                                }
-                                if r_id.get() == i {
-                                    r_id.set(out.get());
-                                }
-                            }
-                            Op::NoOp | Op::Fill { .. } | Op::Arange { .. } => {}
-                        }
-                    }
                 }
             }
         }
@@ -480,46 +402,6 @@ impl<T: DType> Graph<T> {
                         },
                         shape: op.shape.clone(),
                     };
-                    // Update all future uses of this op's result (index i) to use 'o_id'.
-                    for fut in new_ops.iter_mut().skip(i + 1) {
-                        match &fut.op {
-                            Op::BinaryOp { l_id, r_id, .. } => {
-                                if l_id.get() == i {
-                                    l_id.set(o_id.get());
-                                }
-                                if r_id.get() == i {
-                                    r_id.set(o_id.get());
-                                }
-                            }
-                            Op::UnaryOp { v_id, .. } => {
-                                if v_id.get() == i {
-                                    v_id.set(o_id.get());
-                                }
-                            }
-                            Op::FusedMulAdd {
-                                a_id, b_id, c_id, ..
-                            } => {
-                                if a_id.get() == i {
-                                    a_id.set(o_id.get());
-                                }
-                                if b_id.get() == i {
-                                    b_id.set(o_id.get());
-                                }
-                                if c_id.get() == i {
-                                    c_id.set(o_id.get());
-                                }
-                            }
-                            Op::MatMul { l_id, r_id, .. } => {
-                                if l_id.get() == i {
-                                    l_id.set(o_id.get());
-                                }
-                                if r_id.get() == i {
-                                    r_id.set(o_id.get());
-                                }
-                            }
-                            Op::NoOp | Op::Fill { .. } | Op::Arange { .. } => {}
-                        }
-                    }
                 }
             }
         }

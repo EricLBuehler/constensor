@@ -4,10 +4,12 @@ fn main() {
     let mut graph: Graph<f32> = Graph::empty();
     let arange = GraphTensor::<R1<10>, f32, Cpu>::arange(&mut graph, 0., 1.);
     dbg!(&arange.to_tensor().unwrap().data());
-    let x = GraphTensor::<R2<3, 4>, f32, Cpu>::fill(&mut graph, 1.0);
-    let y = GraphTensor::<R2<3, 4>, f32, Cpu>::fill(&mut graph, 2.0);
-    let z = GraphTensor::<R2<3, 4>, f32, Cpu>::fill(&mut graph, 2.0);
-    let res = y * x + z;
+    let a = GraphTensor::<R2<3, 4>, f32, Cpu>::fill(&mut graph, 1.0);
+    let b = GraphTensor::<R2<3, 4>, f32, Cpu>::fill(&mut graph, 2.0);
+    let c = GraphTensor::<R2<3, 4>, f32, Cpu>::fill(&mut graph, 3.0);
+    let d = GraphTensor::<R2<3, 4>, f32, Cpu>::fill(&mut graph, 4.0);
+    let res = a * b + c;
+    let res = res + d;
 
     graph.optimize();
 
@@ -15,5 +17,5 @@ fn main() {
 
     let tensor: Tensor<R2<3, 4>, f32, Cpu> = res.to_tensor().unwrap();
 
-    assert_eq!(tensor.data().unwrap().to_vec(), vec![vec![4.0; 4]; 3],);
+    assert_eq!(tensor.data().unwrap().to_vec(), vec![vec![9.0; 4]; 3],);
 }
