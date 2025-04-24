@@ -83,36 +83,21 @@ impl Name {
 fn handle_node<T: DType>(
     current_name: &mut usize,
     header: &mut String,
-    op: &Op<T>,
-    graph: &[Op<T>],
+    op: &GraphNode<T>,
+    graph: &[GraphNode<T>],
 ) -> String {
-    match op {
+    match &op.op {
         Op::BinaryOp {
             l_id,
             r_id,
             operator,
         } => {
-            let l_name = handle_node(
-                current_name,
-                header,
-                &graph[<&GraphTensorId as Into<usize>>::into(l_id)],
-                graph,
-            );
-            let r_name = handle_node(
-                current_name,
-                header,
-                &graph[<&GraphTensorId as Into<usize>>::into(r_id)],
-                graph,
-            );
+            let l_name = handle_node(current_name, header, &graph[l_id.get()], graph);
+            let r_name = handle_node(current_name, header, &graph[r_id.get()], graph);
             format!("({l_name} {} {r_name})", operator.as_c_op())
         }
         Op::UnaryOp { v_id, operator } => {
-            let v_name = handle_node(
-                current_name,
-                header,
-                &graph[<&GraphTensorId as Into<usize>>::into(v_id)],
-                graph,
-            );
+            let v_name = handle_node(current_name, header, &graph[v_id.get()], graph);
             operator.fill_in_c_op(v_name)
         }
         Op::Fill { v } => {
@@ -132,24 +117,9 @@ fn handle_node<T: DType>(
             format!("({})", name.to_name())
         }
         Op::FusedMulAdd { a_id, b_id, c_id } => {
-            let a_name = handle_node(
-                current_name,
-                header,
-                &graph[<&GraphTensorId as Into<usize>>::into(a_id)],
-                graph,
-            );
-            let b_name = handle_node(
-                current_name,
-                header,
-                &graph[<&GraphTensorId as Into<usize>>::into(b_id)],
-                graph,
-            );
-            let c_name = handle_node(
-                current_name,
-                header,
-                &graph[<&GraphTensorId as Into<usize>>::into(c_id)],
-                graph,
-            );
+            let a_name = handle_node(current_name, header, &graph[a_id.get()], graph);
+            let b_name = handle_node(current_name, header, &graph[b_id.get()], graph);
+            let c_name = handle_node(current_name, header, &graph[c_id.get()], graph);
             #[cfg(feature = "slow_integral_fma_cuda")]
             if T::INTEGRAL {
                 use crate::graph::BinaryOpType;
@@ -163,6 +133,16 @@ fn handle_node<T: DType>(
             format!("( static_cast<T>(fma(static_cast<double>({a_name}), static_cast<double>({b_name}), static_cast<double>({c_name}))))")
         }
         Op::NoOp => unreachable!("no-op ops should never be reached."),
+        Op::MatMul {
+            l_id,
+            r_id,
+            o_id,
+            k,
+            alpha,
+            beta,
+        } => {
+            todo!()
+        }
     }
 }
 
@@ -215,11 +195,7 @@ fn compile_ptx(template_kernel: String) -> Result<Ptx> {
 }
 
 impl CudaDevice {
-    fn run_graph<S: crate::Shape, T: DType>(
-        &self,
-        header: String,
-        body: String,
-    ) -> Result<CudaStorage<T>> {
+    fn run_graph<T: DType>(&self, header: String, body: String) -> Result<CudaStorage<T>> {
         // Module name is based on hash of body and header
         let mut hasher = DefaultHasher::new();
         body.hash(&mut hasher);
@@ -308,6 +284,6 @@ impl BackendDevice for CudaDevice {
     fn compile_and_run_graph<T: DType>(&self, nodes: &[GraphNode<T>]) -> Result<Self::Storage<T>> {
         let mut header = "".to_string();
         let body = handle_node(&mut 0, &mut header, nodes.last().unwrap(), nodes);
-        self.run_graph::<S, T>(header, body)
+        self.run_graph::<T>(header, body)
     }
 }
