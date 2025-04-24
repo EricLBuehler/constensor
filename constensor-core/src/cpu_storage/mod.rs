@@ -12,8 +12,6 @@ use crate::{
     storage::{BackendDevice, BackendStorage},
     DType, GraphNode, Op, Result,
 };
-// (matmul implemented directly; gemm crate no longer used)
-// use gemm::{gemm, Parallelism};
 
 mod pool;
 
@@ -215,24 +213,12 @@ impl BackendDevice for CpuDevice {
                         // Allocate output buffer and compute C = A * B via direct multiplication
                         let k_dim = *k_dim;
                         let mut out = pool.borrow_mut().get_buffer(m * n);
-                        // Debug: print dimensions and input buffers
-                        println!(
-                            "[CPU MatMul] m={}, n={}, k_dim={}, a_buf={:?}, b_buf={:?}",
-                            m,
-                            n,
-                            k_dim,
-                            &a_buf[..],
-                            &b_buf[..],
-                        );
-                        // Prepare full input buffers for A (m x k_dim) and B (k_dim x n)
-                        let a_data = &a_buf[..];
-                        let b_data = &b_buf[..];
                         // Compute matrix multiplication: out[i,j] = sum_p a_data[i,k] * b_data[k,j]
                         for i in 0..m {
                             for j in 0..n {
                                 let mut sum = T::ZERO;
                                 for p in 0..k_dim {
-                                    sum = sum + a_data[i * k_dim + p] * b_data[p * n + j];
+                                    sum = sum + a_buf[i * k_dim + p] * b_buf[p * n + j];
                                 }
                                 out[i * n + j] = sum;
                             }
