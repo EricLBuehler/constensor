@@ -143,7 +143,6 @@ maybe_neg!(i64);
 maybe_neg!(f32);
 maybe_neg!(f64);
 
-#[cfg(not(feature = "cuda"))]
 /// Marker trait for tensor datatypes.
 pub trait DType:
     Debug + Clone + DTypeOps + Send + Sync + MaybeNeg + DeviceReprLike + 'static

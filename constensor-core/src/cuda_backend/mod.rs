@@ -18,7 +18,7 @@ use crate::{
     cpu_storage::CpuStorage,
     graph::GraphTensorId,
     storage::{BackendDevice, BackendStorage},
-    DType, Op, Result, SignedDType,
+    DType, GraphNode, Op, Result,
 };
 
 #[derive(Clone)]
@@ -305,10 +305,7 @@ impl CudaDevice {
 impl BackendDevice for CudaDevice {
     type Storage<X: DType> = CudaStorage<X>;
 
-    fn compile_and_run_graph<S: crate::Shape, T: DType>(
-        &self,
-        nodes: &[crate::Op<T>],
-    ) -> Result<Self::Storage<T>> {
+    fn compile_and_run_graph<T: DType>(&self, nodes: &[GraphNode<T>]) -> Result<Self::Storage<T>> {
         let mut header = "".to_string();
         let body = handle_node(&mut 0, &mut header, nodes.last().unwrap(), nodes);
         self.run_graph::<S, T>(header, body)
