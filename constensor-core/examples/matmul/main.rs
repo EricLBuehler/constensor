@@ -27,10 +27,7 @@ fn bench<T: DType, const B: usize, const M: usize, const K: usize, const N: usiz
     }
 
     let avg = total / (iterations as u32);
-    println!(
-        "Average execution time for {} over {} iterations: {:?}",
-        type_name, iterations, avg
-    );
+    println!("Average execution time for {type_name} over {iterations} iterations: {avg:?}");
 }
 
 fn main() {

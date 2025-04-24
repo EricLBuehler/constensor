@@ -72,17 +72,14 @@ impl<T: DType> Graph<T> {
                 }
                 _ => {
                     let label = match &op.op {
-                        Op::Fill { v, .. } => format!("Fill({:?})", v),
+                        Op::Fill { v, .. } => format!("Fill({v:?})"),
                         Op::Arange {
                             start, step, stop, ..
                         } => {
-                            format!(
-                                "Arange(start={:?}, step={:?}, stop={:?})",
-                                start, step, stop
-                            )
+                            format!("Arange(start={start:?}, step={step:?}, stop={stop:?})")
                         }
                         Op::BinaryOp { operator, .. } => format!("BinOp({})", operator.as_c_op()),
-                        Op::UnaryOp { operator, .. } => format!("UnOp({:?})", operator),
+                        Op::UnaryOp { operator, .. } => format!("UnOp({operator:?})"),
                         Op::FusedMulAdd { .. } => "FMA".to_string(),
                         // Matrix multiplication
                         Op::MatMul { .. } => "MatMul".to_string(),
