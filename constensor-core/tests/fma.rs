@@ -1,6 +1,6 @@
 #[cfg(feature = "cuda")]
 use constensor_core::Cuda;
-use constensor_core::{Cpu, Graph, GraphTensor, R2};
+use constensor_core::{CompiledGraph, Cpu, Graph, GraphTensor, R2};
 
 macro_rules! test_for_device_fma {
     ($dev:ty, $name:ident) => {
@@ -12,8 +12,9 @@ macro_rules! test_for_device_fma {
                 let a = GraphTensor::<R2<3, 4>, f32, $dev>::fill(&mut graph, 2.0);
                 let b = GraphTensor::<R2<3, 4>, f32, $dev>::fill(&mut graph, 3.0);
                 let c = GraphTensor::<R2<3, 4>, f32, $dev>::fill(&mut graph, 4.0);
-                let res = a * b + c;
-                let tensor = res.to_tensor().unwrap();
+                let _res = a * b + c;
+                let compiled: CompiledGraph<R2<3, 4>, f32, $dev> = graph.compile().unwrap();
+                let tensor = compiled.run().unwrap();
                 assert_eq!(tensor.data().unwrap().to_vec(), vec![vec![10.0; 4]; 3],);
             }
 
@@ -23,8 +24,9 @@ macro_rules! test_for_device_fma {
                 let a = GraphTensor::<R2<3, 4>, i32, $dev>::fill(&mut graph, 2);
                 let b = GraphTensor::<R2<3, 4>, i32, $dev>::fill(&mut graph, 3);
                 let c = GraphTensor::<R2<3, 4>, i32, $dev>::fill(&mut graph, 4);
-                let res = a * b + c;
-                let tensor = res.to_tensor().unwrap();
+                let _res = a * b + c;
+                let compiled: CompiledGraph<R2<3, 4>, i32, $dev> = graph.compile().unwrap();
+                let tensor = compiled.run().unwrap();
                 assert_eq!(tensor.data().unwrap().to_vec(), vec![vec![10; 4]; 3],);
             }
         }
@@ -47,8 +49,9 @@ macro_rules! test_for_device_half_fma {
                     GraphTensor::<R2<3, 4>, f16, $dev>::fill(&mut graph, f16::from_f64_const(3.0));
                 let c =
                     GraphTensor::<R2<3, 4>, f16, $dev>::fill(&mut graph, f16::from_f64_const(4.0));
-                let res = a * b + c;
-                let tensor = res.to_tensor().unwrap();
+                let _res = a * b + c;
+                let compiled: CompiledGraph<R2<3, 4>, f16, $dev> = graph.compile().unwrap();
+                let tensor = compiled.run().unwrap();
                 assert_eq!(
                     tensor.data().unwrap().to_vec(),
                     vec![vec![f16::from_f64_const(10.0); 4]; 3],
@@ -80,8 +83,9 @@ macro_rules! test_for_device_bfloat_fma {
                     &mut graph,
                     bf16::from_f64_const(4.0),
                 );
-                let res = a * b + c;
-                let tensor = res.to_tensor().unwrap();
+                let _res = a * b + c;
+                let compiled: CompiledGraph<R2<3, 4>, bf16, $dev> = graph.compile().unwrap();
+                let tensor = compiled.run().unwrap();
                 assert_eq!(
                     tensor.data().unwrap().to_vec(),
                     vec![vec![bf16::from_f64_const(10.0); 4]; 3],

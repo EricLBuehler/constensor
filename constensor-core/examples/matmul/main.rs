@@ -1,4 +1,4 @@
-use constensor_core::{Cpu, DType, Graph, GraphTensor, R3};
+use constensor_core::{CompiledGraph, Cpu, DType, Graph, GraphTensor, R3};
 use std::time::Instant;
 
 fn bench<T: DType, const B: usize, const M: usize, const K: usize, const N: usize>(
@@ -10,18 +10,19 @@ fn bench<T: DType, const B: usize, const M: usize, const K: usize, const N: usiz
     let iterations = 1000;
     let mut total = std::time::Duration::new(0, 0);
 
+    let mut graph = Graph::empty();
+    let a = GraphTensor::<R3<B, M, K>, T, Cpu>::ones(&mut graph);
+    let b = GraphTensor::<R3<B, K, N>, T, Cpu>::ones(&mut graph);
+    let o = GraphTensor::<R3<B, M, N>, T, Cpu>::ones(&mut graph);
+    let _c = a.matmul_axpby(b, o, alpha, beta);
+
+    graph.optimize();
+    let compiled: CompiledGraph<R3<B, M, N>, T, Cpu> = graph.compile().unwrap();
+
     for _ in 0..iterations {
         let start = Instant::now();
 
-        let mut graph = Graph::empty();
-        let a = GraphTensor::<R3<B, M, K>, T, Cpu>::ones(&mut graph);
-        let b = GraphTensor::<R3<B, K, N>, T, Cpu>::ones(&mut graph);
-        let o = GraphTensor::<R3<B, M, N>, T, Cpu>::ones(&mut graph);
-        let c = a.matmul_axpby(b, o, alpha, beta);
-
-        graph.optimize();
-
-        let _tensor = std::hint::black_box(c.to_tensor().unwrap());
+        let _tensor = std::hint::black_box(compiled.run().unwrap());
 
         total += start.elapsed();
     }

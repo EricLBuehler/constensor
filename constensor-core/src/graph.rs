@@ -450,6 +450,7 @@ impl<T: DType> Graph<T> {
     }
 }
 
+/// A representation of the compiled graph. The shape is the output shape.
 pub enum CompiledGraph<S: Shape, T: DType, D: Dev> {
     Cpu {
         order: Vec<usize>,

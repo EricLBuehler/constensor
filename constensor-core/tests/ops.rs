@@ -1,6 +1,6 @@
 #[cfg(feature = "cuda")]
 use constensor_core::Cuda;
-use constensor_core::{Cpu, Graph, GraphTensor, R1, R2, R3};
+use constensor_core::{CompiledGraph, Cpu, Graph, GraphTensor, R1, R2, R3};
 #[cfg(feature = "bfloat")]
 use half::bf16;
 #[cfg(feature = "half")]
@@ -13,8 +13,9 @@ macro_rules! test_for_device_float {
             #[test]
             fn fill() {
                 let mut graph = Graph::empty();
-                let gt = GraphTensor::<R2<3, 4>, f32, $dev>::fill(&mut graph, 0.0);
-                let tensor = gt.to_tensor().unwrap();
+                let _gt = GraphTensor::<R2<3, 4>, f32, $dev>::fill(&mut graph, 0.0);
+                let compiled: CompiledGraph<R2<3, 4>, f32, $dev> = graph.compile().unwrap();
+                let tensor = compiled.run().unwrap();
                 assert_eq!(
                     tensor.data().unwrap().to_vec(),
                     vec![
@@ -32,8 +33,9 @@ macro_rules! test_for_device_float {
                 let y = GraphTensor::<R2<3, 4>, f32, $dev>::fill(&mut graph, 2.0);
                 let z = GraphTensor::<R2<3, 4>, f32, $dev>::fill(&mut graph, 4.0);
                 let c = x + y;
-                let res = z / c;
-                let tensor = res.to_tensor().unwrap();
+                let _res = z / c;
+                let compiled: CompiledGraph<R2<3, 4>, f32, $dev> = graph.compile().unwrap();
+                let tensor = compiled.run().unwrap();
                 assert_eq!(
                     tensor.data().unwrap().to_vec(),
                     vec![
@@ -49,8 +51,9 @@ macro_rules! test_for_device_float {
                 let mut graph = Graph::empty();
                 let x = GraphTensor::<R1<4>, f32, $dev>::fill(&mut graph, 1.0);
                 let y = GraphTensor::<R1<4>, f32, $dev>::arange(&mut graph, 0.0, 1.0);
-                let res = x + y;
-                let tensor = res.to_tensor().unwrap();
+                let _res = x + y;
+                let compiled: CompiledGraph<R1<4>, f32, $dev> = graph.compile().unwrap();
+                let tensor = compiled.run().unwrap();
                 assert_eq!(tensor.data().unwrap().to_vec(), vec![1.0, 1.25, 1.5, 1.75]);
             }
 
@@ -59,8 +62,9 @@ macro_rules! test_for_device_float {
                 let mut graph = Graph::empty();
                 let a = GraphTensor::<R3<1, 2, 3>, f32, $dev>::ones(&mut graph);
                 let b = GraphTensor::<R3<1, 3, 2>, f32, $dev>::ones(&mut graph);
-                let c = a.matmul(b);
-                let tensor = c.to_tensor().unwrap();
+                let _c = a.matmul(b);
+                let compiled: CompiledGraph<R3<1, 3, 2>, f32, $dev> = graph.compile().unwrap();
+                let tensor = compiled.run().unwrap();
                 let expected: [Vec<[f32; 2]>; 1] = [vec![[3.0, 3.0], [3.0, 3.0]]];
                 assert_eq!(tensor.data().unwrap().to_vec(), expected);
             }
@@ -71,8 +75,9 @@ macro_rules! test_for_device_float {
                 let a = GraphTensor::<R3<1, 2, 3>, f32, $dev>::ones(&mut graph);
                 let b = GraphTensor::<R3<1, 3, 2>, f32, $dev>::ones(&mut graph);
                 let o = GraphTensor::<R3<1, 2, 2>, f32, $dev>::ones(&mut graph);
-                let c = a.matmul_axpby(b, o, 1., 1.);
-                let tensor = c.to_tensor().unwrap();
+                let _c = a.matmul_axpby(b, o, 1., 1.);
+                let compiled: CompiledGraph<R3<1, 3, 2>, f32, $dev> = graph.compile().unwrap();
+                let tensor = compiled.run().unwrap();
                 let expected: [Vec<[f32; 2]>; 1] = [vec![[4.0, 4.0], [4.0, 4.0]]];
                 assert_eq!(tensor.data().unwrap().to_vec(), expected);
             }
@@ -91,8 +96,9 @@ macro_rules! test_for_device_int {
             #[test]
             fn fill() {
                 let mut graph = Graph::empty();
-                let gt = GraphTensor::<R2<3, 4>, i32, $dev>::fill(&mut graph, 0);
-                let tensor = gt.to_tensor().unwrap();
+                let _gt = GraphTensor::<R2<3, 4>, i32, $dev>::fill(&mut graph, 0);
+                let compiled: CompiledGraph<R2<3, 4>, i32, $dev> = graph.compile().unwrap();
+                let tensor = compiled.run().unwrap();
                 assert_eq!(
                     tensor.data().unwrap().to_vec(),
                     vec![[0, 0, 0, 0,], [0, 0, 0, 0,], [0, 0, 0, 0,],],
@@ -106,8 +112,9 @@ macro_rules! test_for_device_int {
                 let y = GraphTensor::<R2<3, 4>, i32, $dev>::fill(&mut graph, 2);
                 let z = GraphTensor::<R2<3, 4>, i32, $dev>::fill(&mut graph, 4);
                 let c = x + y;
-                let res = z / c;
-                let tensor = res.to_tensor().unwrap();
+                let _res = z / c;
+                let compiled: CompiledGraph<R2<3, 4>, i32, $dev> = graph.compile().unwrap();
+                let tensor = compiled.run().unwrap();
                 assert_eq!(
                     tensor.data().unwrap().to_vec(),
                     vec![[1, 1, 1, 1,], [1, 1, 1, 1,], [1, 1, 1, 1,],],
@@ -119,8 +126,9 @@ macro_rules! test_for_device_int {
                 let mut graph = Graph::empty();
                 let x = GraphTensor::<R1<4>, i32, $dev>::fill(&mut graph, 1);
                 let y = GraphTensor::<R1<4>, i32, $dev>::arange(&mut graph, 0, 4);
-                let res = x + y;
-                let tensor = res.to_tensor().unwrap();
+                let _res = x + y;
+                let compiled: CompiledGraph<R1<4>, i32, $dev> = graph.compile().unwrap();
+                let tensor = compiled.run().unwrap();
                 assert_eq!(tensor.data().unwrap().to_vec(), vec![1, 2, 3, 4]);
             }
 
@@ -129,8 +137,9 @@ macro_rules! test_for_device_int {
                 let mut graph = Graph::empty();
                 let a = GraphTensor::<R3<1, 2, 3>, i32, $dev>::ones(&mut graph);
                 let b = GraphTensor::<R3<1, 3, 2>, i32, $dev>::ones(&mut graph);
-                let c = a.matmul(b);
-                let tensor = c.to_tensor().unwrap();
+                let _c = a.matmul(b);
+                let compiled: CompiledGraph<R3<1, 3, 2>, i32, $dev> = graph.compile().unwrap();
+                let tensor = compiled.run().unwrap();
                 let expected: [Vec<[i32; 2]>; 1] = [vec![[3, 3], [3, 3]]];
                 assert_eq!(tensor.data().unwrap().to_vec(), expected);
             }
@@ -141,8 +150,9 @@ macro_rules! test_for_device_int {
                 let a = GraphTensor::<R3<1, 2, 3>, i32, $dev>::ones(&mut graph);
                 let b = GraphTensor::<R3<1, 3, 2>, i32, $dev>::ones(&mut graph);
                 let o = GraphTensor::<R3<1, 2, 2>, i32, $dev>::ones(&mut graph);
-                let c = a.matmul_axpby(b, o, 1, 1);
-                let tensor = c.to_tensor().unwrap();
+                let _c = a.matmul_axpby(b, o, 1, 1);
+                let compiled: CompiledGraph<R3<1, 3, 2>, i32, $dev> = graph.compile().unwrap();
+                let tensor = compiled.run().unwrap();
                 let expected: [Vec<[i32; 2]>; 1] = [vec![[4, 4], [4, 4]]];
                 assert_eq!(tensor.data().unwrap().to_vec(), expected);
             }
@@ -162,9 +172,10 @@ macro_rules! test_for_device_half {
             #[test]
             fn fill() {
                 let mut graph = Graph::empty();
-                let gt =
+                let _gt =
                     GraphTensor::<R2<3, 4>, f16, $dev>::fill(&mut graph, f16::from_f64_const(0.0));
-                let tensor = gt.to_tensor().unwrap();
+                let compiled: CompiledGraph<R2<3, 4>, f16, $dev> = graph.compile().unwrap();
+                let tensor = compiled.run().unwrap();
                 assert_eq!(
                     tensor.data().unwrap().to_vec(),
                     vec![vec![f16::from_f64_const(0.0); 4]; 3],
@@ -181,8 +192,9 @@ macro_rules! test_for_device_half {
                 let z =
                     GraphTensor::<R2<3, 4>, f16, $dev>::fill(&mut graph, f16::from_f64_const(4.0));
                 let c = x + y;
-                let res = z / c;
-                let tensor = res.to_tensor().unwrap();
+                let _res = z / c;
+                let compiled: CompiledGraph<R2<3, 4>, f16, $dev> = graph.compile().unwrap();
+                let tensor = compiled.run().unwrap();
                 assert_eq!(
                     tensor.data().unwrap().to_vec(),
                     vec![vec![f16::from_f64_const(1.3330078); 4]; 3],
@@ -198,8 +210,9 @@ macro_rules! test_for_device_half {
                     f16::from_f64_const(0.0),
                     f16::from_f64_const(1.0),
                 );
-                let res = x + y;
-                let tensor = res.to_tensor().unwrap();
+                let _res = x + y;
+                let compiled: CompiledGraph<R1<4>, f16, $dev> = graph.compile().unwrap();
+                let tensor = compiled.run().unwrap();
                 assert_eq!(
                     tensor.data().unwrap().to_vec(),
                     vec![
@@ -227,11 +240,12 @@ macro_rules! test_for_device_bfloat {
             #[test]
             fn fill() {
                 let mut graph = Graph::empty();
-                let gt = GraphTensor::<R2<3, 4>, bf16, $dev>::fill(
+                let _gt = GraphTensor::<R2<3, 4>, bf16, $dev>::fill(
                     &mut graph,
                     bf16::from_f64_const(0.0),
                 );
-                let tensor = gt.to_tensor().unwrap();
+                let compiled: CompiledGraph<R2<3, 4>, bf16, $dev> = graph.compile().unwrap();
+                let tensor = compiled.run().unwrap();
                 assert_eq!(
                     tensor.data().unwrap().to_vec(),
                     vec![vec![bf16::from_f64_const(0.0); 4]; 3],
@@ -254,8 +268,9 @@ macro_rules! test_for_device_bfloat {
                     bf16::from_f64_const(4.0),
                 );
                 let c = x + y;
-                let res = z / c;
-                let tensor = res.to_tensor().unwrap();
+                let _res = z / c;
+                let compiled: CompiledGraph<R2<3, 4>, bf16, $dev> = graph.compile().unwrap();
+                let tensor = compiled.run().unwrap();
                 assert_eq!(
                     tensor.data().unwrap().to_vec(),
                     vec![vec![bf16::from_f64_const(1.3330078); 4]; 3],
@@ -272,8 +287,9 @@ macro_rules! test_for_device_bfloat {
                     bf16::from_f64_const(0.0),
                     bf16::from_f64_const(1.0),
                 );
-                let res = x + y;
-                let tensor = res.to_tensor().unwrap();
+                let _res = x + y;
+                let compiled: CompiledGraph<R1<4>, bf16, $dev> = graph.compile().unwrap();
+                let tensor = compiled.run().unwrap();
                 assert_eq!(
                     tensor.data().unwrap().to_vec(),
                     vec![
@@ -305,8 +321,9 @@ macro_rules! test_for_device_float_unary {
                 let y = GraphTensor::<R2<3, 4>, f32, $dev>::fill(&mut graph, 2.0);
                 let z = GraphTensor::<R2<3, 4>, f32, $dev>::fill(&mut graph, 4.0);
                 let c = x + -y;
-                let res = z / c;
-                let tensor = res.to_tensor().unwrap();
+                let _res = z / c;
+                let compiled: CompiledGraph<R2<3, 4>, f32, $dev> = graph.compile().unwrap();
+                let tensor = compiled.run().unwrap();
                 assert_eq!(tensor.data().unwrap().to_vec(), vec![vec![-4.0; 4]; 3],);
             }
         }
@@ -326,8 +343,9 @@ macro_rules! test_for_device_sqrt {
             fn sqrt_float() {
                 let mut graph = Graph::empty();
                 let x = GraphTensor::<R2<3, 4>, f32, $dev>::fill(&mut graph, 4.0);
-                let res = x.sqrt();
-                let tensor = res.to_tensor().unwrap();
+                let _res = x.sqrt();
+                let compiled: CompiledGraph<R2<3, 4>, f32, $dev> = graph.compile().unwrap();
+                let tensor = compiled.run().unwrap();
                 assert_eq!(tensor.data().unwrap().to_vec(), vec![vec![2.0; 4]; 3],);
             }
 
@@ -335,8 +353,9 @@ macro_rules! test_for_device_sqrt {
             fn sqrt_int() {
                 let mut graph = Graph::empty();
                 let x = GraphTensor::<R2<3, 4>, i32, $dev>::fill(&mut graph, 5);
-                let res = x.sqrt();
-                let tensor = res.to_tensor().unwrap();
+                let _res = x.sqrt();
+                let compiled: CompiledGraph<R2<3, 4>, i32, $dev> = graph.compile().unwrap();
+                let tensor = compiled.run().unwrap();
                 assert_eq!(tensor.data().unwrap().to_vec(), vec![vec![2; 4]; 3],);
             }
         }
