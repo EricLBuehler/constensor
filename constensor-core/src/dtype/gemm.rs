@@ -7,10 +7,11 @@ use half::f16;
 
 pub trait GemmDispatch {
     #[allow(clippy::too_many_arguments)]
-    /// Matmul A (m x k) and B (k x n) to C (m x n)
+    // Matrix multiplication: (B x M x K) * (B x K x N) = (B x M x N)
     fn launch_gemm(
         lhs: &[Self],
         rhs: &[Self],
+        b: usize,
         m: usize,
         n: usize,
         k: usize,
@@ -27,6 +28,7 @@ macro_rules! instantiate_gemm {
             fn launch_gemm(
                 lhs: &[Self],
                 rhs: &[Self],
+                b: usize,
                 m: usize,
                 n: usize,
                 k: usize,
@@ -36,13 +38,16 @@ macro_rules! instantiate_gemm {
             ) where
                 Self: Sized,
             {
-                for i in 0..m {
-                    for j in 0..n {
-                        let mut sum = $init;
-                        for p in 0..k {
-                            sum = sum + beta * lhs[i * k + p] * rhs[p * n + j];
+                for b in 0..b {
+                    for i in 0..m {
+                        for j in 0..n {
+                            let mut sum = $init;
+                            for p in 0..k {
+                                sum +=
+                                    beta * lhs[b * m * k + i * k + p] * rhs[b * k * n + p * n + j];
+                            }
+                            out[b * m * n + i * n + j] = alpha * out[b * m * n + i * n + j] + sum;
                         }
-                        out[i * n + j] = alpha * out[i * n + j] + sum;
                     }
                 }
             }
@@ -54,6 +59,7 @@ macro_rules! instantiate_gemm {
             fn launch_gemm(
                 lhs: &[Self],
                 rhs: &[Self],
+                b: usize,
                 m: usize,
                 n: usize,
                 k: usize,
@@ -80,28 +86,34 @@ macro_rules! instantiate_gemm {
                 let rhs_cs = 1;
                 let rhs_rs = n;
 
-                unsafe {
-                    gemm(
-                        /* m: usize = */ m,
-                        /* n: usize = */ n,
-                        /* k: usize = */ k,
-                        /* dst: *mut T = */ out.as_mut_ptr(),
-                        /* dst_cs: isize = */ dst_cs as isize,
-                        /* dst_rs: isize = */ dst_rs as isize,
-                        /* read_dst: bool = */ false,
-                        /* lhs: *const T = */ lhs.as_ptr(),
-                        /* lhs_cs: isize = */ lhs_cs as isize,
-                        /* lhs_rs: isize = */ lhs_rs as isize,
-                        /* rhs: *const T = */ rhs.as_ptr(),
-                        /* rhs_cs: isize = */ rhs_cs as isize,
-                        /* rhs_rs: isize = */ rhs_rs as isize,
-                        /* alpha: T = */ alpha,
-                        /* beta: T = */ beta,
-                        /* conj_dst: bool = */ false,
-                        /* conj_lhs: bool = */ false,
-                        /* conj_rhs: bool = */ false,
-                        parallelism,
-                    )
+                for b in 0..b {
+                    let lhs_p = &lhs[b * m * k..];
+                    let rhs_p = &rhs[b * k * n..];
+                    let out_p = &mut out[b * m * n..];
+
+                    unsafe {
+                        gemm(
+                            /* m: usize = */ m,
+                            /* n: usize = */ n,
+                            /* k: usize = */ k,
+                            /* dst: *mut T = */ out_p.as_mut_ptr(),
+                            /* dst_cs: isize = */ dst_cs as isize,
+                            /* dst_rs: isize = */ dst_rs as isize,
+                            /* read_dst: bool = */ false,
+                            /* lhs: *const T = */ lhs_p.as_ptr(),
+                            /* lhs_cs: isize = */ lhs_cs as isize,
+                            /* lhs_rs: isize = */ lhs_rs as isize,
+                            /* rhs: *const T = */ rhs_p.as_ptr(),
+                            /* rhs_cs: isize = */ rhs_cs as isize,
+                            /* rhs_rs: isize = */ rhs_rs as isize,
+                            /* alpha: T = */ alpha,
+                            /* beta: T = */ beta,
+                            /* conj_dst: bool = */ false,
+                            /* conj_lhs: bool = */ false,
+                            /* conj_rhs: bool = */ false,
+                            parallelism,
+                        )
+                    }
                 }
             }
         }

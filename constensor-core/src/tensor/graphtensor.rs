@@ -8,7 +8,7 @@ use crate::{
     device::Dev,
     graph::{BinaryOpType, Graph, GraphTensorId, Op, UnaryOpType},
     tensor::concretetensor::from_storage,
-    DType, Result, Shape, Tensor, R1, R2,
+    DType, Result, Shape, Tensor, R1, R3,
 };
 
 /// A tensor representing an intermediary result of a graph. Performing operations
@@ -20,19 +20,23 @@ pub struct GraphTensor<S: Shape, T: DType, D: Dev> {
     _ghost: PhantomData<(S, T, D)>,
 }
 
-// Matrix multiplication for 2D GraphTensors: (A x B) * (B x C) = (A x C)
-impl<const A: usize, const B: usize, T: DType, D: Dev> GraphTensor<R2<A, B>, T, D> {
+impl<const B: usize, const M: usize, const K: usize, T: DType, D: Dev>
+    GraphTensor<R3<B, M, K>, T, D>
+{
     #[must_use]
-    /// Matrix multiplication: self (A x B) multiplied by rhs (B x C) giving (A x C)
-    pub fn matmul<const C: usize>(
+    // Matrix multiplication: (B x M x K) * (B x K x N) = (B x M x N)
+    pub fn matmul<const N: usize>(
         self,
-        rhs: GraphTensor<R2<B, C>, T, D>,
-    ) -> GraphTensor<R2<A, C>, T, D> {
-        self.graph.write().unwrap().add_op::<R2<A, C>>(Op::MatMul {
-            l_id: self.id(),
-            r_id: rhs.id(),
-            k: B,
-        });
+        rhs: GraphTensor<R3<B, K, N>, T, D>,
+    ) -> GraphTensor<R3<B, M, N>, T, D> {
+        self.graph
+            .write()
+            .unwrap()
+            .add_op::<R3<B, M, N>>(Op::MatMul {
+                l_id: self.id(),
+                r_id: rhs.id(),
+                k: K,
+            });
         GraphTensor {
             id: self.graph.write().unwrap().next_id(),
             graph: self.graph.clone(),

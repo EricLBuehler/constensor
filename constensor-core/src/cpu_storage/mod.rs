@@ -206,12 +206,13 @@ impl BackendDevice for CpuDevice {
                         let b_buf = results[r_idx].as_ref().unwrap();
                         // Determine output dimensions from shape S (must be 2D)
                         let shape = out_shape;
-                        assert!(shape.len() == 2, "MatMul requires 2D output shape");
-                        let m = shape[0];
-                        let n = shape[1];
+                        assert!(shape.len() == 3);
+                        let b = shape[0];
+                        let m = shape[1];
+                        let n = shape[2];
                         let mut out = pool.borrow_mut().get_buffer(m * n);
                         // Compute matrix multiplication: out[i,j] = sum_p a_data[i,k] * b_data[k,j]
-                        T::launch_gemm(a_buf, b_buf, m, n, *k, &mut out, T::ZERO, T::ONE);
+                        T::launch_gemm(a_buf, b_buf, b, m, n, *k, &mut out, T::ZERO, T::ONE);
                         PooledBuffer::new(out, pool.clone())
                     }
                     Op::NoOp => unreachable!("NoOp should not be evaluated."),
