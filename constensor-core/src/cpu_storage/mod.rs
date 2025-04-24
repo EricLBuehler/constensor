@@ -8,7 +8,6 @@ use pool::{BufferPool, PooledBuffer};
 use rayon::iter::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator};
 
 use crate::{
-    graph::GraphTensorId,
     storage::{BackendDevice, BackendStorage},
     DType, GraphNode, Op, Result,
 };
@@ -43,32 +42,21 @@ impl BackendDevice for CpuDevice {
 
             for (idx, node) in graph.iter().enumerate() {
                 match &node.op {
-                    Op::BinaryOp { l_id, r_id, .. } | Op::InplaceBinaryOp { l_id, r_id, .. } => {
-                        let l_idx = <&GraphTensorId as Into<usize>>::into(l_id);
-                        let r_idx = <&GraphTensorId as Into<usize>>::into(r_id);
-                        dep_graph.add_edge(l_idx, idx, ());
-                        dep_graph.add_edge(r_idx, idx, ());
+                    Op::BinaryOp { l_id, r_id, .. } => {
+                        dep_graph.add_edge(l_id.get(), idx, ());
+                        dep_graph.add_edge(r_id.get(), idx, ());
                     }
                     Op::UnaryOp { v_id, .. } => {
-                        let v_idx = <&GraphTensorId as Into<usize>>::into(v_id);
-                        dep_graph.add_edge(v_idx, idx, ());
+                        dep_graph.add_edge(v_id.get(), idx, ());
                     }
-                    Op::FusedMulAdd { a_id, b_id, c_id }
-                    | Op::InplaceFusedMulAdd {
-                        a_id, b_id, c_id, ..
-                    } => {
-                        let a_idx = <&GraphTensorId as Into<usize>>::into(a_id);
-                        let b_idx = <&GraphTensorId as Into<usize>>::into(b_id);
-                        let c_idx = <&GraphTensorId as Into<usize>>::into(c_id);
-                        dep_graph.add_edge(a_idx, idx, ());
-                        dep_graph.add_edge(b_idx, idx, ());
-                        dep_graph.add_edge(c_idx, idx, ());
+                    Op::FusedMulAdd { a_id, b_id, c_id } => {
+                        dep_graph.add_edge(a_id.get(), idx, ());
+                        dep_graph.add_edge(b_id.get(), idx, ());
+                        dep_graph.add_edge(c_id.get(), idx, ());
                     }
                     Op::MatMul { l_id, r_id, .. } => {
-                        let l_idx = <&GraphTensorId as Into<usize>>::into(l_id);
-                        let r_idx = <&GraphTensorId as Into<usize>>::into(r_id);
-                        dep_graph.add_edge(l_idx, idx, ());
-                        dep_graph.add_edge(r_idx, idx, ());
+                        dep_graph.add_edge(l_id.get(), idx, ());
+                        dep_graph.add_edge(r_id.get(), idx, ());
                     }
                     // NoOp and Fill/Arange don’t create incoming edges
                     Op::NoOp | Op::Fill { .. } | Op::Arange { .. } => {}
@@ -95,35 +83,22 @@ impl BackendDevice for CpuDevice {
                         r_id,
                         operator,
                     } => {
-                        let l_idx = <&GraphTensorId as Into<usize>>::into(l_id);
-                        let r_idx = <&GraphTensorId as Into<usize>>::into(r_id);
-                        let l_buf = results[l_idx].as_ref().unwrap();
-                        let r_buf = results[r_idx].as_ref().unwrap();
-                        let mut out = pool.borrow_mut().get_buffer(out_elem_count);
-                        T::binary_simd_op(l_buf, r_buf, &mut out, *operator);
-                        PooledBuffer::new(out, pool.clone())
-                    }
-                    Op::InplaceBinaryOp {
-                        out,
-                        l_id,
-                        r_id,
-                        operator,
-                    } => {
-                        let l_idx = <&GraphTensorId as Into<usize>>::into(l_id);
-                        let r_idx = <&GraphTensorId as Into<usize>>::into(r_id);
-                        let o_idx = <&GraphTensorId as Into<usize>>::into(out);
-                        if o_idx == l_idx {
-                            let mut l_buf = results[l_idx].take().unwrap();
-                            let r_buf = results[r_idx].as_ref().unwrap();
+                        if l_id.is_inplace() {
+                            let mut l_buf = results[l_id.get()].take().unwrap();
+                            let r_buf = results[r_id.get()].as_ref().unwrap();
                             T::binary_simd_op_inplace_lhs(&mut l_buf, r_buf, *operator);
                             l_buf
-                        } else if o_idx == r_idx {
-                            let mut r_buf = results[r_idx].take().unwrap();
-                            let l_buf = results[l_idx].as_ref().unwrap();
+                        } else if r_id.is_inplace() {
+                            let mut r_buf = results[r_id.get()].take().unwrap();
+                            let l_buf = results[l_id.get()].as_ref().unwrap();
                             T::binary_simd_op_inplace_rhs(l_buf, &mut r_buf, *operator);
                             r_buf
                         } else {
-                            unreachable!()
+                            let l_buf = results[l_id.get()].as_ref().unwrap();
+                            let r_buf = results[r_id.get()].as_ref().unwrap();
+                            let mut out = pool.borrow_mut().get_buffer(out_elem_count);
+                            T::binary_simd_op(l_buf, r_buf, &mut out, *operator);
+                            PooledBuffer::new(out, pool.clone())
                         }
                     }
                     Op::Fill { v } => {
@@ -141,8 +116,7 @@ impl BackendDevice for CpuDevice {
                         PooledBuffer::new(buf, pool.clone())
                     }
                     Op::UnaryOp { v_id, operator } => {
-                        let v_idx = <&GraphTensorId as Into<usize>>::into(v_id);
-                        let buf = results[v_idx].as_ref().unwrap();
+                        let buf = results[v_id.get()].as_ref().unwrap();
                         let op_fn = operator.to_closure();
                         let mut out = pool.borrow_mut().get_buffer(out_elem_count);
                         out.par_iter_mut()
@@ -151,51 +125,35 @@ impl BackendDevice for CpuDevice {
                         PooledBuffer::new(out, pool.clone())
                     }
                     Op::FusedMulAdd { a_id, b_id, c_id } => {
-                        let a_idx = <&GraphTensorId as Into<usize>>::into(a_id);
-                        let b_idx = <&GraphTensorId as Into<usize>>::into(b_id);
-                        let c_idx = <&GraphTensorId as Into<usize>>::into(c_id);
-                        let a_buf = results[a_idx].as_ref().unwrap();
-                        let b_buf = results[b_idx].as_ref().unwrap();
-                        let c_buf = results[c_idx].as_ref().unwrap();
-
-                        let mut out = pool.borrow_mut().get_buffer(out_elem_count);
-                        T::fma_op(a_buf, b_buf, c_buf, &mut out);
-                        PooledBuffer::new(out, pool.clone())
-                    }
-                    Op::InplaceFusedMulAdd {
-                        a_id,
-                        b_id,
-                        c_id,
-                        out,
-                    } => {
-                        let a_idx = <&GraphTensorId as Into<usize>>::into(a_id);
-                        let b_idx = <&GraphTensorId as Into<usize>>::into(b_id);
-                        let c_idx = <&GraphTensorId as Into<usize>>::into(c_id);
-                        let o_idx = <&GraphTensorId as Into<usize>>::into(out);
-
-                        if o_idx == a_idx {
-                            let mut a_buf = results[a_idx].take().unwrap();
-                            let b_buf = results[b_idx].as_ref().unwrap();
-                            let c_buf = results[c_idx].as_ref().unwrap();
+                        if a_id.is_inplace() {
+                            let mut a_buf = results[a_id.get()].take().unwrap();
+                            let b_buf = results[b_id.get()].as_ref().unwrap();
+                            let c_buf = results[c_id.get()].as_ref().unwrap();
 
                             T::fma_op_inplace_a(&mut a_buf, b_buf, c_buf);
                             a_buf
-                        } else if o_idx == b_idx {
-                            let mut b_buf = results[b_idx].take().unwrap();
-                            let a_buf = results[a_idx].as_ref().unwrap();
-                            let c_buf = results[c_idx].as_ref().unwrap();
+                        } else if b_id.is_inplace() {
+                            let mut b_buf = results[b_id.get()].take().unwrap();
+                            let a_buf = results[a_id.get()].as_ref().unwrap();
+                            let c_buf = results[c_id.get()].as_ref().unwrap();
 
                             T::fma_op_inplace_b(a_buf, &mut b_buf, c_buf);
                             b_buf
-                        } else if o_idx == c_idx {
-                            let mut c_buf = results[c_idx].take().unwrap();
-                            let a_buf = results[a_idx].as_ref().unwrap();
-                            let b_buf = results[b_idx].as_ref().unwrap();
+                        } else if c_id.is_inplace() {
+                            let mut c_buf = results[c_id.get()].take().unwrap();
+                            let a_buf = results[a_id.get()].as_ref().unwrap();
+                            let b_buf = results[b_id.get()].as_ref().unwrap();
 
                             T::fma_op_inplace_c(a_buf, b_buf, &mut c_buf);
                             c_buf
                         } else {
-                            unreachable!()
+                            let a_buf = results[a_id.get()].as_ref().unwrap();
+                            let b_buf = results[b_id.get()].as_ref().unwrap();
+                            let c_buf = results[c_id.get()].as_ref().unwrap();
+
+                            let mut out = pool.borrow_mut().get_buffer(out_elem_count);
+                            T::fma_op(a_buf, b_buf, c_buf, &mut out);
+                            PooledBuffer::new(out, pool.clone())
                         }
                     }
                     // Matrix multiplication: multiply two 2D tensors A (m x k) and B (k x n)
@@ -207,10 +165,8 @@ impl BackendDevice for CpuDevice {
                         alpha,
                         beta,
                     } => {
-                        let l_idx = <&GraphTensorId as Into<usize>>::into(l_id);
-                        let r_idx = <&GraphTensorId as Into<usize>>::into(r_id);
-                        let a_buf = results[l_idx].as_ref().unwrap();
-                        let b_buf = results[r_idx].as_ref().unwrap();
+                        let a_buf = results[l_id.get()].as_ref().unwrap();
+                        let b_buf = results[r_id.get()].as_ref().unwrap();
                         // Determine output dimensions from shape S (must be 2D)
                         let shape = out_shape;
                         assert!(shape.len() == 3);
@@ -219,8 +175,7 @@ impl BackendDevice for CpuDevice {
                         let n = shape[2];
 
                         let mut out = if let Some(o_id) = o_id {
-                            let o_idx = <&GraphTensorId as Into<usize>>::into(o_id);
-                            let o_buf = results[o_idx].as_ref().unwrap();
+                            let o_buf = results[o_id.get()].as_ref().unwrap();
                             (*o_buf).clone()
                         } else {
                             pool.borrow_mut().get_buffer(m * n)
