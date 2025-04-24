@@ -1,11 +1,11 @@
 use std::{
     borrow::Cow,
-    cell::OnceCell,
+    collections::HashMap,
     fs,
     hash::{DefaultHasher, Hash, Hasher},
     ops::Deref,
     path::{Path, PathBuf},
-    sync::Arc,
+    sync::{Arc, RwLock},
 };
 mod error;
 use cudarc::{
@@ -17,7 +17,6 @@ use petgraph::{algo::toposort, prelude::DiGraphMap};
 
 use crate::{
     cpu_storage::CpuStorage,
-    graph::GraphTensorId,
     storage::{BackendDevice, BackendStorage},
     DType, GraphNode, Op, Result,
 };
@@ -26,7 +25,7 @@ use crate::{
 pub struct CudaDevice {
     context: Arc<cudarc::driver::CudaContext>,
     stream: Arc<cudarc::driver::CudaStream>,
-    module: OnceCell<Arc<CudaModule>>,
+    modules: Arc<RwLock<Vec<Arc<CudaModule>>>>,
 }
 
 impl CudaDevice {
@@ -36,7 +35,7 @@ impl CudaDevice {
         Ok(Self {
             context,
             stream,
-            module: OnceCell::new(),
+            modules: Arc::new(RwLock::new(vec![])),
         })
     }
 
@@ -44,11 +43,11 @@ impl CudaDevice {
         self.stream.clone()
     }
 
-    pub(crate) fn get_or_load_func(&self, function_name: &str, ptx: Ptx) -> Result<CudaFunction> {
-        let module = self
-            .module
-            .get_or_init(|| self.context.load_module(ptx).w().unwrap());
-        module.load_function(function_name).w()
+    pub(crate) fn load_func(&self, function_name: &str, ptx: Ptx) -> Result<CudaFunction> {
+        let module = self.context.load_module(ptx).w()?;
+        let func = module.load_function(function_name).w()?;
+        self.modules.write().unwrap().push(module);
+        Ok(func)
     }
 }
 
@@ -108,7 +107,7 @@ fn handle_node<T: DType>(
             format!("({})", name.to_name())
         }
         Op::Arange { start, step, stop } => {
-            // compile_error!("arange is not implemented for CUDA yet.");
+            // todo!();
             *current_name += 1;
             let name = Name(*current_name);
             *header += &format!(
@@ -134,16 +133,7 @@ fn handle_node<T: DType>(
             format!("( static_cast<T>(fma(static_cast<double>({a_name}), static_cast<double>({b_name}), static_cast<double>({c_name}))))")
         }
         Op::NoOp => unreachable!("no-op ops should never be reached."),
-        Op::MatMul {
-            l_id,
-            r_id,
-            o_id,
-            k,
-            alpha,
-            beta,
-        } => {
-            todo!()
-        }
+        Op::MatMul { .. } => unreachable!("matmul op should have its own split!"),
     }
 }
 
@@ -196,7 +186,12 @@ fn compile_ptx(template_kernel: String) -> Result<Ptx> {
 }
 
 impl CudaDevice {
-    fn run_graph<T: DType>(&self, header: String, body: String) -> Result<CudaStorage<T>> {
+    fn run_graph<T: DType>(
+        &self,
+        header: String,
+        body: String,
+        shape: Vec<usize>,
+    ) -> Result<CudaStorage<T>> {
         // Module name is based on hash of body and header
         let mut hasher = DefaultHasher::new();
         body.hash(&mut hasher);
@@ -258,12 +253,12 @@ impl CudaDevice {
             fs::write(path, ptx_str)?;
         }
 
-        let n_elems = 100; //S::element_count();
+        let n_elems = shape.iter().product();
         let stream = self.stream();
 
         let data = unsafe { stream.alloc::<T>(n_elems) }.w()?;
 
-        let func = self.get_or_load_func(&function_name, ptx)?;
+        let func = self.load_func(&function_name, ptx)?;
 
         let cfg = LaunchConfig::for_num_elems(n_elems as u32);
 
@@ -316,11 +311,11 @@ impl BackendDevice for CudaDevice {
         let order = toposort(&dep_graph, None).expect("Cycle detected in graph!");
 
         // Split into groups of nodes whose input shapes and dtype match
-        let mut splits: Vec<Vec<usize>> = Vec::new();
+        let mut splits: Vec<(Vec<usize>, Vec<usize>)> = Vec::new();
         for &idx in &order {
             // Determine a key based on this node's input shapes
             let shape_key: Vec<usize> = graph[idx].shape.clone();
-            let should_group = if let Some(last_group) = splits.last_mut() {
+            let should_group = if let Some((last_group, _)) = splits.last_mut() {
                 let last_idx = *last_group.last().unwrap();
                 let last_shape_key = graph[last_idx].shape.clone();
                 last_shape_key == shape_key
@@ -328,15 +323,15 @@ impl BackendDevice for CudaDevice {
                 false
             };
             if should_group {
-                splits.last_mut().unwrap().push(idx);
+                splits.last_mut().unwrap().0.push(idx);
             } else {
-                splits.push(vec![idx]);
+                splits.push((vec![idx], shape_key));
             }
         }
 
         // For each group of nodes with matching input shapes/dtype, generate and run kernels
-        let mut last_storage = None;
-        for sub_order in splits {
+        let mut last_storage = HashMap::new();
+        for (sub_order, shape) in splits {
             // build header/body for this subgraph slice
             let mut header = String::new();
             let body = handle_node(
@@ -346,11 +341,11 @@ impl BackendDevice for CudaDevice {
                 graph,
             );
             // launch a kernel for this subgroup
-            let storage = self.run_graph::<T>(header.clone(), body.clone())?;
-            last_storage = Some(storage);
-            // handle or collect `storage` as needed; here we return the last one
+            let storage = self.run_graph::<T>(header.clone(), body.clone(), shape)?;
+            last_storage.insert(*sub_order.iter().max().unwrap(), storage);
         }
-        // Return the last storage (corresponds to the output node)
-        Ok(last_storage.expect("No nodes to execute"))
+
+        let key = *last_storage.keys().max().unwrap();
+        Ok(last_storage.remove(&key).unwrap())
     }
 }

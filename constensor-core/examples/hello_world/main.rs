@@ -2,8 +2,8 @@ use constensor_core::{Cpu, Cuda, Graph, GraphTensor, Tensor, R1, R2};
 
 fn main() {
     let mut graph: Graph<f32> = Graph::empty();
-    // let arange = GraphTensor::<R1<10>, f32, Cuda<0>>::arange(&mut graph, 0., 1.);
-    // dbg!(&arange.to_tensor().unwrap().data());
+    let arange = GraphTensor::<R1<10>, f32, Cuda<0>>::arange(&mut graph, 0., 1.);
+    dbg!(&arange.to_tensor().unwrap().data());
     let a = GraphTensor::<R2<3, 4>, f32, Cuda<0>>::fill(&mut graph, 1.0);
     let b = GraphTensor::<R2<3, 4>, f32, Cuda<0>>::fill(&mut graph, 2.0);
     let c = GraphTensor::<R2<3, 4>, f32, Cuda<0>>::fill(&mut graph, 3.0);
