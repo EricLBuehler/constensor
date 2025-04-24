@@ -13,6 +13,7 @@ use cudarc::{
     nvrtc::{CompileOptions, Ptx},
 };
 use error::WrapErr;
+use petgraph::{algo::toposort, prelude::DiGraphMap};
 
 use crate::{
     cpu_storage::CpuStorage,
@@ -107,7 +108,7 @@ fn handle_node<T: DType>(
             format!("({})", name.to_name())
         }
         Op::Arange { start, step, stop } => {
-            compile_error!("arange is not implemented for CUDA yet.");
+            // compile_error!("arange is not implemented for CUDA yet.");
             *current_name += 1;
             let name = Name(*current_name);
             *header += &format!(
@@ -257,7 +258,7 @@ impl CudaDevice {
             fs::write(path, ptx_str)?;
         }
 
-        let n_elems = S::element_count();
+        let n_elems = 100; //S::element_count();
         let stream = self.stream();
 
         let data = unsafe { stream.alloc::<T>(n_elems) }.w()?;
@@ -281,9 +282,75 @@ impl CudaDevice {
 impl BackendDevice for CudaDevice {
     type Storage<X: DType> = CudaStorage<X>;
 
-    fn compile_and_run_graph<T: DType>(&self, nodes: &[GraphNode<T>]) -> Result<Self::Storage<T>> {
-        let mut header = "".to_string();
-        let body = handle_node(&mut 0, &mut header, nodes.last().unwrap(), nodes);
-        self.run_graph::<T>(header, body)
+    fn compile_and_run_graph<T: DType>(&self, graph: &[GraphNode<T>]) -> Result<Self::Storage<T>> {
+        // Build a dependency graph of tensor indices
+        let mut dep_graph = DiGraphMap::<usize, ()>::new();
+        for idx in 0..graph.len() {
+            dep_graph.add_node(idx);
+        }
+
+        for (idx, node) in graph.iter().enumerate() {
+            match &node.op {
+                Op::BinaryOp { l_id, r_id, .. } => {
+                    dep_graph.add_edge(l_id.get(), idx, ());
+                    dep_graph.add_edge(r_id.get(), idx, ());
+                }
+                Op::UnaryOp { v_id, .. } => {
+                    dep_graph.add_edge(v_id.get(), idx, ());
+                }
+                Op::FusedMulAdd { a_id, b_id, c_id } => {
+                    dep_graph.add_edge(a_id.get(), idx, ());
+                    dep_graph.add_edge(b_id.get(), idx, ());
+                    dep_graph.add_edge(c_id.get(), idx, ());
+                }
+                Op::MatMul { l_id, r_id, .. } => {
+                    dep_graph.add_edge(l_id.get(), idx, ());
+                    dep_graph.add_edge(r_id.get(), idx, ());
+                }
+                // NoOp and Fill/Arange don’t create incoming edges
+                Op::NoOp | Op::Fill { .. } | Op::Arange { .. } => {}
+            }
+        }
+
+        // Compute topological order
+        let order = toposort(&dep_graph, None).expect("Cycle detected in graph!");
+
+        // Split into groups of nodes whose input shapes and dtype match
+        let mut splits: Vec<Vec<usize>> = Vec::new();
+        for &idx in &order {
+            // Determine a key based on this node's input shapes
+            let shape_key: Vec<usize> = graph[idx].shape.clone();
+            let should_group = if let Some(last_group) = splits.last_mut() {
+                let last_idx = *last_group.last().unwrap();
+                let last_shape_key = graph[last_idx].shape.clone();
+                last_shape_key == shape_key
+            } else {
+                false
+            };
+            if should_group {
+                splits.last_mut().unwrap().push(idx);
+            } else {
+                splits.push(vec![idx]);
+            }
+        }
+
+        // For each group of nodes with matching input shapes/dtype, generate and run kernels
+        let mut last_storage = None;
+        for sub_order in splits {
+            // build header/body for this subgraph slice
+            let mut header = String::new();
+            let body = handle_node(
+                &mut 0,
+                &mut header,
+                &graph[*sub_order.last().unwrap()],
+                graph,
+            );
+            // launch a kernel for this subgroup
+            let storage = self.run_graph::<T>(header.clone(), body.clone())?;
+            last_storage = Some(storage);
+            // handle or collect `storage` as needed; here we return the last one
+        }
+        // Return the last storage (corresponds to the output node)
+        Ok(last_storage.expect("No nodes to execute"))
     }
 }
