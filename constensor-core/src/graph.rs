@@ -476,6 +476,99 @@ impl<T: DType> Graph<T> {
         *self.data.write().unwrap() = new_ops;
     }
 
+    /// Remove nodes whose outputs are never used, except the final output node.
+    fn optimize_dead_code(&mut self) {
+        // Clone current ops
+        let old_ops = self.data.read().unwrap().clone();
+        let n = old_ops.len();
+        // Mark reachable nodes: start from final output
+        let mut keep = vec![false; n];
+        if n > 0 {
+            keep[n - 1] = true;
+        }
+        // Propagate reachability backwards
+        for i in (0..n).rev() {
+            if keep[i] {
+                match &old_ops[i].op {
+                    Op::BinaryOp { l_id, r_id, .. } => {
+                        keep[l_id.get()] = true;
+                        keep[r_id.get()] = true;
+                    }
+                    Op::UnaryOp { v_id, .. } => {
+                        keep[v_id.get()] = true;
+                    }
+                    Op::FusedMulAdd {
+                        a_id, b_id, c_id, ..
+                    } => {
+                        keep[a_id.get()] = true;
+                        keep[b_id.get()] = true;
+                        keep[c_id.get()] = true;
+                    }
+                    Op::MatMul {
+                        l_id, r_id, o_id, ..
+                    } => {
+                        keep[l_id.get()] = true;
+                        keep[r_id.get()] = true;
+                        if let Some(o_id) = o_id {
+                            keep[o_id.get()] = true;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+        // Build new ops and map old indices to new indices
+        let mut index_map = std::collections::HashMap::new();
+        let mut new_ops = Vec::new();
+        for (old_idx, node) in old_ops.into_iter().enumerate() {
+            if keep[old_idx] {
+                let new_idx = new_ops.len();
+                index_map.insert(old_idx, new_idx);
+                new_ops.push(node);
+            }
+        }
+        // Update tensor IDs in remaining ops
+        for node in new_ops.iter_mut() {
+            match &mut node.op {
+                Op::BinaryOp { l_id, r_id, .. } => {
+                    let old_l = l_id.get();
+                    let old_r = r_id.get();
+                    l_id.set(*index_map.get(&old_l).unwrap());
+                    r_id.set(*index_map.get(&old_r).unwrap());
+                }
+                Op::UnaryOp { v_id, .. } => {
+                    let old_v = v_id.get();
+                    v_id.set(*index_map.get(&old_v).unwrap());
+                }
+                Op::FusedMulAdd {
+                    a_id, b_id, c_id, ..
+                } => {
+                    let old_a = a_id.get();
+                    let old_b = b_id.get();
+                    let old_c = c_id.get();
+                    a_id.set(*index_map.get(&old_a).unwrap());
+                    b_id.set(*index_map.get(&old_b).unwrap());
+                    c_id.set(*index_map.get(&old_c).unwrap());
+                }
+                Op::MatMul {
+                    l_id, r_id, o_id, ..
+                } => {
+                    let old_l = l_id.get();
+                    let old_r = r_id.get();
+                    l_id.set(*index_map.get(&old_l).unwrap());
+                    r_id.set(*index_map.get(&old_r).unwrap());
+                    if let Some(o_id) = o_id {
+                        let old_o = o_id.get();
+                        o_id.set(*index_map.get(&old_o).unwrap());
+                    }
+                }
+                _ => {}
+            }
+        }
+        // Commit pruned graph
+        *self.data.write().unwrap() = new_ops;
+    }
+
     /// Optimize this graph.
     ///
     /// Apply the following optimizations:
@@ -484,6 +577,7 @@ impl<T: DType> Graph<T> {
     /// - Inplace binary operations when safe
     /// - Inplace fused multiply-add when safe
     /// - Inplace matrix-multiplication when safe
+    /// - Dead code removal
     pub fn optimize(&mut self) {
         // Constant folding first
         self.optimize_const();
@@ -492,6 +586,8 @@ impl<T: DType> Graph<T> {
         self.optimize_inplace_bin();
         self.optimize_inplace_fma();
         self.optimize_inplace_matmul();
+        // Remove dead code
+        self.optimize_dead_code();
     }
 
     pub fn compile<S: Shape, D: Dev>(self) -> Result<CompiledGraph<S, T, D>> {
