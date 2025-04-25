@@ -13,6 +13,9 @@ use crate::{
     storage::{BackendDevice, BackendStorage},
     CompiledGraph, DType, GraphNode, Op, Result,
 };
+use rand::rng;
+use rand::Rng;
+use rand_distr::{Distribution, Normal};
 
 mod pool;
 
@@ -59,8 +62,8 @@ impl BackendDevice for CpuDevice {
                     dep_graph.add_edge(l_id.get(), idx, ());
                     dep_graph.add_edge(r_id.get(), idx, ());
                 }
-                // NoOp and Fill/Arange don’t create incoming edges
-                Op::NoOp | Op::Fill { .. } | Op::Arange { .. } => {}
+                // NoOp, Fill/Arange, Rand/Randn don’t create incoming edges
+                Op::NoOp | Op::Fill { .. } | Op::Arange { .. } | Op::Rand | Op::Randn { .. } => {}
             }
         }
 
@@ -95,6 +98,8 @@ impl BackendDevice for CpuDevice {
             // Prepare storage for intermediate results
             let mut results: Vec<Option<PooledBuffer<T>>> = Vec::with_capacity(graph.len());
             results.resize_with(graph.len(), || None);
+
+            let mut rng = rng();
 
             // Evaluate nodes in topological order
             for idx in order.clone() {
@@ -138,6 +143,23 @@ impl BackendDevice for CpuDevice {
                         while x < stop.to_f64() {
                             buf.push(T::from_f64(x));
                             x += step.to_f64();
+                        }
+                        PooledBuffer::new(buf, pool.clone())
+                    }
+                    Op::Rand => {
+                        let mut buf = pool.borrow_mut().get_buffer(out_elem_count);
+                        for elt in &mut buf {
+                            *elt = T::from_f64(rng.random());
+                        }
+                        PooledBuffer::new(buf, pool.clone())
+                    }
+                    Op::Randn { mean, std } => {
+                        let mean_f = mean.to_f64();
+                        let std_f = std.to_f64();
+                        let normal = Normal::new(mean_f, std_f).unwrap();
+                        let mut buf = pool.borrow_mut().get_buffer(out_elem_count);
+                        for elt in &mut buf {
+                            *elt = T::from_f64(normal.sample(&mut rng));
                         }
                         PooledBuffer::new(buf, pool.clone())
                     }

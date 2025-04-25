@@ -79,6 +79,10 @@ impl<T: DType> Graph<T> {
                         } => {
                             format!("Arange(start={start:?}, step={step:?}, stop={stop:?})")
                         }
+                        Op::Rand => "Rand".to_string(),
+                        Op::Randn { mean, std } => {
+                            format!("Randn(mean={mean:?}, std={std:?})")
+                        }
                         Op::BinaryOp { operator, .. } => format!("BinOp({})", operator.as_c_op()),
                         Op::UnaryOp { operator, .. } => format!("UnOp({operator:?})"),
                         Op::FusedMulAdd { .. } => "FMA".to_string(),
@@ -166,8 +170,8 @@ impl<T: DType> Graph<T> {
                         }
                     }
                 }
-                // NoOp and Fill/Arange don’t create incoming edges
-                Op::NoOp | Op::Fill { .. } | Op::Arange { .. } => {}
+                // NoOp, Fill/Arange, Rand/Randn don’t create incoming edges
+                Op::NoOp | Op::Fill { .. } | Op::Arange { .. } | Op::Rand | Op::Randn { .. } => {}
             }
         }
 
@@ -297,6 +301,8 @@ impl<T: DType> Graph<T> {
                                     stop: _,
                                     ..
                                 } => vec![],
+                                Op::Rand => vec![],
+                                Op::Randn { mean: _, std: _ } => vec![],
                                 Op::BinaryOp { l_id, r_id, .. } => vec![l_id, r_id],
                                 Op::Fill { v: _, .. } => vec![],
                                 Op::UnaryOp {
@@ -361,7 +367,8 @@ impl<T: DType> Graph<T> {
                     *usage.entry(l_id.clone()).or_default() += 1;
                     *usage.entry(r_id.clone()).or_default() += 1;
                 }
-                Op::NoOp | Op::Fill { .. } | Op::Arange { .. } => {}
+                // No input usage for these ops
+                Op::NoOp | Op::Fill { .. } | Op::Arange { .. } | Op::Rand | Op::Randn { .. } => {}
             }
         }
         usage
@@ -720,6 +727,13 @@ pub enum Op<T: DType> {
         k: usize,
         alpha: T,
         beta: T,
+    },
+    /// Fill with uniform random values in [0, 1).
+    Rand,
+    /// Fill with normally distributed random values (mean, std).
+    Randn {
+        mean: T,
+        std: T,
     },
     NoOp,
 }

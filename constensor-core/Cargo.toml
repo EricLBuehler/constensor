@@ -13,11 +13,13 @@ readme = "README.md"
 cudarc = { workspace = true, optional = true }
 thiserror.workspace = true
 half = { workspace = true, optional = true }
-dirs = "5.0.1"
-rayon = "1.10.0"
+dirs.workspace = true
+rayon.workspace = true
 petgraph.workspace = true
-gemm = "0.18"
-num_cpus = "1.16.0"
+gemm.workspace = true
+num_cpus.workspace = true
+rand.workspace = true
+rand_distr.workspace = true
 
 [features]
 default = ["half", "bfloat"]

@@ -367,3 +367,25 @@ macro_rules! test_for_device_sqrt {
 test_for_device_sqrt!(Cpu, cpu_tests_sqrt);
 #[cfg(feature = "cuda")]
 test_for_device_sqrt!(Cuda<0>, cuda_tests_sqrt);
+
+#[test]
+fn cpu_rand_uniform() {
+    let mut graph = Graph::empty();
+    let _x = GraphTensor::<R1<5>, f32, Cpu>::rand(&mut graph);
+    let compiled: CompiledGraph<R1<5>, f32, Cpu> = graph.compile().unwrap();
+    let tensor = compiled.run().unwrap();
+    let data = tensor.data().unwrap().to_vec();
+    for &v in &data {
+        assert!(v >= 0.0 && v < 1.0, "value {} out of [0,1)", v);
+    }
+}
+
+#[test]
+fn cpu_randn_zero_std() {
+    let mut graph = Graph::empty();
+    let _x = GraphTensor::<R1<5>, f32, Cpu>::randn(&mut graph, 3.14, 0.0);
+    graph.visualize("out.png").unwrap();
+    let compiled: CompiledGraph<R1<5>, f32, Cpu> = graph.compile().unwrap();
+    let tensor = compiled.run().unwrap();
+    assert_eq!(tensor.data().unwrap().to_vec(), vec![3.14; 5]);
+}

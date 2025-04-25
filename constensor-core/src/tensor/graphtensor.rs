@@ -5,7 +5,7 @@ use std::{
 };
 
 use crate::{
-    device::Dev,
+    device::{Cpu, Dev},
     graph::{BinaryOpType, Graph, GraphTensorId, Op, UnaryOpType},
     DType, Shape, R1, R3,
 };
@@ -139,6 +139,33 @@ impl<const A: usize, T: DType, D: Dev> GraphTensor<R1<A>, T, D> {
             stop,
         });
         Self {
+            id,
+            graph: Arc::new(RwLock::new(graph.clone())),
+            _ghost: PhantomData,
+        }
+    }
+}
+
+// CPU-only random initializations
+impl<S: Shape, T: DType> GraphTensor<S, T, Cpu> {
+    #[must_use]
+    /// Create a tensor filled with uniform random values in [0,1).
+    pub fn rand(graph: &mut Graph<T>) -> Self {
+        let id = graph.next_id();
+        graph.add_op::<S>(Op::Rand);
+        GraphTensor {
+            id,
+            graph: Arc::new(RwLock::new(graph.clone())),
+            _ghost: PhantomData,
+        }
+    }
+
+    #[must_use]
+    /// Create a tensor filled with normally distributed random values (mean, std).
+    pub fn randn(graph: &mut Graph<T>, mean: T, std: T) -> Self {
+        let id = graph.next_id();
+        graph.add_op::<S>(Op::Randn { mean, std });
+        GraphTensor {
             id,
             graph: Arc::new(RwLock::new(graph.clone())),
             _ghost: PhantomData,
