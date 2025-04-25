@@ -121,26 +121,43 @@ macro_rules! instantiate_gemm {
         impl GemmDispatch for $rt {
             fn launch_gemm(
                 lhs: &[Self],
+                lhs_stride: &[usize],
                 rhs: &[Self],
+                rhs_stride: &[usize],
                 b: usize,
                 m: usize,
                 n: usize,
                 k: usize,
                 out: &mut Vec<Self>,
+                out_stride: &[usize],
                 alpha: Self,
                 beta: Self,
             ) where
                 Self: Sized,
             {
-                for b in 0..b {
+                let lhs_bs = lhs_stride[0];
+                let lhs_rs = lhs_stride[1];
+                let lhs_cs = lhs_stride[2];
+
+                let rhs_bs = rhs_stride[0];
+                let rhs_rs = rhs_stride[1];
+                let rhs_cs = rhs_stride[2];
+
+                let out_bs = out_stride[0];
+                let out_rs = out_stride[1];
+                let out_cs = out_stride[2];
+
+                for batch_idx in 0..b {
                     for i in 0..m {
                         for j in 0..n {
                             let mut sum = $init;
                             for p in 0..k {
-                                sum +=
-                                    beta * lhs[b * m * k + i * k + p] * rhs[b * k * n + p * n + j];
+                                let lhs_val = lhs[batch_idx * lhs_bs + i * lhs_rs + p * lhs_cs];
+                                let rhs_val = rhs[batch_idx * rhs_bs + p * rhs_rs + j * rhs_cs];
+                                sum += beta * lhs_val * rhs_val;
                             }
-                            out[b * m * n + i * n + j] = alpha * out[b * m * n + i * n + j] + sum;
+                            let out_idx = batch_idx * out_bs + i * out_rs + j * out_cs;
+                            out[out_idx] = alpha * out[out_idx] + sum;
                         }
                     }
                 }
