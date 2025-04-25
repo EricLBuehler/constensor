@@ -88,11 +88,17 @@ pub enum CudaCompiledKernel<T: DType> {
     MatMul {
         l_id: usize,
         r_id: usize,
+        /// Optional output tensor ID for axpby semantics
+        o_id: Option<usize>,
         b: usize,
         m: usize,
         n: usize,
         k: usize,
         order: usize,
+        /// scale factor for existing output
+        alpha: T,
+        /// scale factor for lhs*rhs
+        beta: T,
     },
 }
 
@@ -368,21 +374,31 @@ impl BackendDevice for CudaDevice {
 
         for &idx in &order {
             match &graph[idx].op {
-                Op::MatMul { l_id, r_id, .. } => {
+                Op::MatMul {
+                    l_id,
+                    r_id,
+                    o_id,
+                    k,
+                    alpha,
+                    beta,
+                } => {
                     let l_shape = &graph[l_id.get()].shape;
                     let r_shape = &graph[r_id.get()].shape;
                     assert_eq!(l_shape.len(), 3);
                     assert_eq!(r_shape.len(), 3);
-                    let (b, m, k) = (l_shape[0], l_shape[1], l_shape[2]);
+                    let (b, m, _k) = (l_shape[0], l_shape[1], l_shape[2]);
                     let n = r_shape[2];
                     matmuls.push(CudaCompiledKernel::MatMul {
                         l_id: l_id.get(),
                         r_id: r_id.get(),
+                        o_id: o_id.as_ref().map(|id| id.get()),
                         b,
                         m,
                         n,
-                        k,
+                        k: *k,
                         order: idx,
+                        alpha: *alpha,
+                        beta: *beta,
                     });
                 }
                 _ => {
@@ -456,33 +472,31 @@ impl BackendDevice for CudaDevice {
                 CudaCompiledKernel::MatMul {
                     l_id,
                     r_id,
+                    o_id,
                     b,
                     m,
                     n,
                     k,
                     order,
+                    alpha,
+                    beta,
                 } => {
                     // obtain input buffers
                     let lhs = last_storage.get(&l_id).expect("lhs storage missing");
                     let rhs = last_storage.get(&r_id).expect("rhs storage missing");
 
-                    // allocate output buffer
-                    let elems = { *m } * { *n };
+                    let elems = m * n;
+                    // prepare output buffer, copy initial if provided
                     let mut out = unsafe { self.stream().alloc::<T>(elems) }.w()?;
+                    if let Some(o_idx) = o_id {
+                        let init = last_storage.get(&o_idx).expect("output storage missing");
+                        self.stream().memcpy_dtod(&init.slice, &mut out).w()?;
+                    }
 
                     let cublas = CudaBlas::new(self.stream()).unwrap();
-
+                    // Note: cublas expects (alpha: product scale, beta: output scale)
                     T::launch_gemm_cuda(
-                        cublas,
-                        &lhs.slice,
-                        &rhs.slice,
-                        *b,
-                        *m,
-                        *n,
-                        *k,
-                        &mut out,
-                        T::ZERO,
-                        T::ONE,
+                        cublas, &lhs.slice, &rhs.slice, *b, *m, *n, *k, &mut out, *beta, *alpha,
                     )?;
 
                     let storage = CudaStorage {
