@@ -24,7 +24,7 @@ use std::{
 use crate::{
     cpu_storage::CpuStorage,
     device::Dev,
-    storage::{BackendDevice, BackendStorage},
+    storage::{BackendDevice, BackendStorage, Storage},
     CompiledGraph, DType, GraphNode, Op, Result, Shape,
 };
 
@@ -99,6 +99,76 @@ impl<T: DType> BackendStorage<T> for CudaStorage<T> {
     fn to_cpu_storage(&self) -> Result<Cow<CpuStorage<T>>> {
         let data = self.device.stream().memcpy_dtov(&self.slice).w()?;
         Ok(Cow::Owned(CpuStorage(data)))
+    }
+    fn cast<U: DType>(&self) -> Result<Storage<U>> {
+        let function_name = format!("cast_{}_to_{}", T::NAME, U::NAME);
+
+        let template_kernel = format!(
+            r#"
+            typedef unsigned char uint8_t;
+            typedef unsigned int uint32_t;
+            typedef long long int int64_t;
+            {}
+            {}
+
+            template <typename T, typename U>
+            __device__ void cast_kernel(T *in, U *out, const size_t numel) {{
+                for (unsigned int i = blockIdx.x * blockDim.x + threadIdx.x; i < numel;
+                    i += blockDim.x * gridDim.x) {{
+                    out[i] = static_cast<U>(in[i]);
+                }}
+            }}
+            
+            extern "C" __global__ void {function_name}({} *in, {} *out, const size_t numel) {{
+                {function_name}_kernel(buf, numel);
+            }}
+
+            "#,
+            T::C_DEP.unwrap_or(""),
+            U::C_DEP.unwrap_or(""),
+            T::C_NAME,
+            U::C_NAME,
+        );
+
+        // Always recompile PTX to avoid using stale cached files
+        let ptx = compile_ptx(template_kernel.clone())?;
+
+        let ptx_str = ptx.to_src();
+        if let Some(home) = dirs::home_dir() {
+            let path = format!(
+                "{}/.cache/constensor/ptx/{function_name}.ptx",
+                home.display()
+            );
+            let path = Path::new(&path);
+            if let Some(parent) = path.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            fs::write(path, ptx_str)?;
+        }
+
+        let stream = self.device.select_stream();
+        let n_elems = self.slice.len();
+
+        let out = unsafe { stream.alloc::<U>(n_elems) }.w()?;
+
+        let func = self.device.load_func(&function_name, ptx)?;
+
+        let cfg = LaunchConfig::for_num_elems(n_elems as u32);
+
+        let mut builder = stream.launch_builder(&func);
+        builder.arg(&self.slice);
+        builder.arg(&out);
+        unsafe { builder.launch(cfg).w()? };
+
+        // Record an event once this kernel completes
+        let event = self.device.context.new_event(None).w()?;
+        event.record(&stream).w()?;
+
+        Ok(Storage::Cuda(CudaStorage {
+            slice: out,
+            device: self.device.clone(),
+            event,
+        }))
     }
 }
 
