@@ -28,7 +28,7 @@ pub trait GemmDispatch {
     #[allow(clippy::too_many_arguments)]
     // Matrix multiplication: (B x M x K) * (B x K x N) = (B x M x N)
     fn launch_gemm_cuda(
-        cublas: cudarc::cublas::CudaBlas,
+        cublas: &cudarc::cublas::CudaBlas,
         lhs: &cudarc::driver::CudaSlice<Self>,
         rhs: &cudarc::driver::CudaSlice<Self>,
         b: usize,
@@ -60,7 +60,7 @@ macro_rules! instantiate_gemm_cuda {
     (__instantiate_fail) => {
         #[cfg(feature = "cuda")]
         fn launch_gemm_cuda(
-            _cublas: cudarc::cublas::CudaBlas,
+            _cublas: &cudarc::cublas::CudaBlas,
             _lhs: &cudarc::driver::CudaSlice<Self>,
             _rhs: &cudarc::driver::CudaSlice<Self>,
             _b: usize,
@@ -81,7 +81,7 @@ macro_rules! instantiate_gemm_cuda {
     ($rt:ident) => {
         #[cfg(feature = "cuda")]
         fn launch_gemm_cuda(
-            cublas: cudarc::cublas::CudaBlas,
+            cublas: &cudarc::cublas::CudaBlas,
             lhs: &cudarc::driver::CudaSlice<$rt>,
             rhs: &cudarc::driver::CudaSlice<$rt>,
             b: usize,

@@ -433,8 +433,11 @@ impl BackendDevice for CudaDevice {
         // Then append all MatMul kernels
         kernels.extend(matmuls);
 
+        let cublas = CudaBlas::new(self.stream()).unwrap();
+
         Ok(CompiledGraph::Cuda {
             kernels,
+            cublas,
             ghost: PhantomData,
         })
     }
@@ -444,7 +447,11 @@ impl BackendDevice for CudaDevice {
         graph: &CompiledGraph<S, T, D>,
     ) -> Result<Self::Storage<T>> {
         #[allow(irrefutable_let_patterns)]
-        let CompiledGraph::Cuda { kernels, ghost: _ } = graph
+        let CompiledGraph::Cuda {
+            kernels,
+            cublas,
+            ghost: _,
+        } = graph
         else {
             unreachable!()
         };
@@ -486,7 +493,6 @@ impl BackendDevice for CudaDevice {
                         self.stream().memcpy_dtod(&init.slice, &mut out).w()?;
                     }
 
-                    let cublas = CudaBlas::new(self.stream()).unwrap();
                     // Note: cublas expects (alpha: product scale, beta: output scale)
                     T::launch_gemm_cuda(
                         cublas, &lhs.slice, &rhs.slice, *b, *m, *n, *k, &mut out, *beta, *alpha,
