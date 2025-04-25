@@ -4,11 +4,6 @@ use {
     crate::{cuda_backend::error::WrapErr, Result},
     cudarc::{curand::CudaRng, driver::CudaSlice},
 };
-// Optional half-precision types
-#[cfg(feature = "bfloat")]
-use half::bf16;
-#[cfg(feature = "half")]
-use half::f16;
 
 /// Dispatch random fills based on the data type (CUDA backend).
 pub trait RandDispatch {
