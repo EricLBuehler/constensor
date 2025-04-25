@@ -11,9 +11,9 @@ mod shape;
 mod storage;
 mod tensor;
 
-pub use device::Cpu;
 #[cfg(feature = "cuda")]
 pub use device::Cuda;
+pub use device::{BestDevice, Cpu};
 pub use dtype::DType;
 pub use error::{Context, Error, Result};
 pub use graph::{CompiledGraph, Graph, GraphNode, Op};

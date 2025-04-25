@@ -1,4 +1,4 @@
-use constensor_core::{CompiledGraph, Cpu, DType, Graph, GraphTensor, R3};
+use constensor_core::{BestDevice, CompiledGraph, DType, Graph, GraphTensor, R3};
 use std::time::Instant;
 
 fn bench<T: DType, const B: usize, const M: usize, const K: usize, const N: usize>(
@@ -11,14 +11,15 @@ fn bench<T: DType, const B: usize, const M: usize, const K: usize, const N: usiz
     let mut total = std::time::Duration::new(0, 0);
 
     let mut graph = Graph::empty();
-    let a = GraphTensor::<R3<B, M, K>, T, Cpu>::fill(&mut graph, T::from_f64(1.));
-    let b = GraphTensor::<R3<B, N, K>, T, Cpu>::fill(&mut graph, T::from_f64(2.)).t();
-    // let b = GraphTensor::<R3<B, K, N>, T, Cpu>::fill(&mut graph, T::from_f64(2.));
-    let o = GraphTensor::<R3<B, M, N>, T, Cpu>::fill(&mut graph, T::from_f64(3.));
+    let a = GraphTensor::<R3<B, M, K>, T, BestDevice<0>>::fill(&mut graph, T::from_f64(1.));
+    // Strided matmuls works on all devices.
+    let b = GraphTensor::<R3<B, N, K>, T, BestDevice<0>>::fill(&mut graph, T::from_f64(2.)).t();
+    // let b = GraphTensor::<R3<B, K, N>, T, BestDevice<0>>::fill(&mut graph, T::from_f64(2.));
+    let o = GraphTensor::<R3<B, M, N>, T, BestDevice<0>>::fill(&mut graph, T::from_f64(3.));
     let _c = a.matmul_axpby(b, o, alpha, beta);
 
     graph.optimize();
-    let compiled: CompiledGraph<R3<B, M, N>, T, Cpu> = graph.compile().unwrap();
+    let compiled: CompiledGraph<R3<B, M, N>, T, BestDevice<0>> = graph.compile().unwrap();
 
     for _ in 0..iterations {
         let start = Instant::now();

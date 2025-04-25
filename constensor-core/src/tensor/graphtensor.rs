@@ -206,7 +206,7 @@ impl<T: DType, const A: usize, const B: usize, D: Dev> GraphTensor<R2<A, B>, T, 
 
         let id = self.graph.write().unwrap().next_id();
 
-        self.graph.write().unwrap().add_op::<R1<A>>(
+        self.graph.write().unwrap().add_op::<R2<B, A>>(
             Op::Permute {
                 v_id: self.id.clone(),
             },
@@ -233,7 +233,7 @@ impl<T: DType, const A: usize, const B: usize, const C: usize, D: Dev>
 
         let id = self.graph.write().unwrap().next_id();
 
-        self.graph.write().unwrap().add_op::<R1<A>>(
+        self.graph.write().unwrap().add_op::<R3<A, C, B>>(
             Op::Permute {
                 v_id: self.id.clone(),
             },

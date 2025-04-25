@@ -57,6 +57,11 @@ cuda_device!(8);
 #[cfg(feature = "cuda")]
 cuda_device!(9);
 
+#[cfg(feature = "cuda")]
+pub type BestDevice<const ORD: usize> = Cuda<ORD>;
+#[cfg(not(feature = "cuda"))]
+pub type BestDevice<const ORD: usize> = Cpu;
+
 /// A concrete device.
 #[derive(Clone)]
 pub enum Device {
