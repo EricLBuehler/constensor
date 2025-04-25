@@ -60,4 +60,5 @@ macro_rules! test_for_device_cast {
 }
 
 test_for_device_cast!(Cpu, cpu_tests_cast);
+#[cfg(feature = "cuda")]
 test_for_device_cast!(Cuda<0>, cuda_tests_cast);
