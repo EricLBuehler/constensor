@@ -15,6 +15,7 @@ pub(crate) fn gemm_config<T>(
 
     let lhs_dims = [b, m, k];
     let rhs_dims = [b, k, n];
+    let out_dims = [b, m, n];
 
     let rhs_m1 = rhs_stride[rhs_stride.len() - 1];
     let rhs_m2 = rhs_stride[rhs_stride.len() - 2];
@@ -92,9 +93,9 @@ pub(crate) fn gemm_config<T>(
         })?,
     };
     let stride_c: usize = match out_stride[..out_stride.len() - 2] {
-        [s1, stride] if s1 == stride * rhs_dims[1] => stride,
-        [_, stride] if rhs_dims[0] == 1 => stride,
-        [stride, _] if rhs_dims[1] == 1 => stride,
+        [s1, stride] if s1 == stride * out_dims[1] => stride,
+        [_, stride] if out_dims[0] == 1 => stride,
+        [stride, _] if out_dims[1] == 1 => stride,
         [stride] => stride,
         [] => m * n,
         _ => Err(Error::MatMulNonContiguous {
