@@ -27,7 +27,7 @@ pub struct CpuStorage<T: DType>(pub(crate) Vec<T>);
 
 impl<T: DType> BackendStorage<T> for CpuStorage<T> {
     fn to_cpu_storage(&self) -> Result<Cow<CpuStorage<T>>> {
-        Ok(Cow::Borrowed(&self))
+        Ok(Cow::Borrowed(self))
     }
     fn cast<U: DType>(&self) -> Result<Storage<U>> {
         let new = self.0.iter().map(|x| U::from_f64(x.to_f64()));

@@ -13,7 +13,7 @@ use std::sync::{
 };
 use std::{
     borrow::Cow,
-    collections::{HashMap, HashSet},
+    collections::{HashMap, HashSet, VecDeque},
     fs,
     hash::{DefaultHasher, Hash, Hasher},
     marker::PhantomData,
@@ -38,10 +38,13 @@ unsafe impl Send for CudaRng {}
 pub struct CudaDevice {
     context: Arc<cudarc::driver::CudaContext>,
     stream: Arc<cudarc::driver::CudaStream>,
-    modules: Arc<RwLock<Vec<Arc<CudaModule>>>>,
+    modules: Arc<RwLock<HashMap<String, Arc<CudaModule>>>>,
+    module_cache_order: Arc<Mutex<VecDeque<String>>>,
     streams: Arc<Vec<Arc<CudaStream>>>,
     stream_index: Arc<AtomicUsize>,
 }
+
+const MAX_CACHED_KERNELS: usize = 128;
 
 impl CudaDevice {
     pub(crate) fn new(ordinal: usize) -> Result<Self> {
@@ -57,7 +60,8 @@ impl CudaDevice {
         Ok(Self {
             context,
             stream,
-            modules: Arc::new(RwLock::new(vec![])),
+            modules: Arc::new(RwLock::new(HashMap::new())),
+            module_cache_order: Arc::new(Mutex::new(VecDeque::new())),
             streams,
             stream_index,
         })
@@ -74,9 +78,29 @@ impl CudaDevice {
     }
 
     pub(crate) fn load_func(&self, function_name: &str, ptx: Ptx) -> Result<CudaFunction> {
+        // If we've already loaded this kernel, skip reloading
+        {
+            let modules_read = self.modules.read().unwrap();
+            if let Some(module) = modules_read.get(function_name) {
+                return module.load_function(function_name).w();
+            }
+        }
+
+        // Otherwise compile and load
         let module = self.context.load_module(ptx).w()?;
         let func = module.load_function(function_name).w()?;
-        self.modules.write().unwrap().push(module);
+        // Insert into cache and cap size
+        {
+            let mut modules_write = self.modules.write().unwrap();
+            let mut order = self.module_cache_order.lock().unwrap();
+            modules_write.insert(function_name.to_string(), module.clone());
+            order.push_back(function_name.to_string());
+            if order.len() > MAX_CACHED_KERNELS {
+                if let Some(old) = order.pop_front() {
+                    modules_write.remove(&old);
+                }
+            }
+        }
         Ok(func)
     }
 }
@@ -374,6 +398,14 @@ impl CudaDevice {
         body.hash(&mut hasher);
         header.hash(&mut hasher);
         let function_name = format!("jit_kernel_{}_{}", hasher.finish(), T::NAME);
+
+        // If we've already compiled this kernel, skip PTX compilation
+        if let Some(module) = self.modules.read().unwrap().get(&function_name) {
+            let func = module.load_function(&function_name).w()?;
+            let n_elems: usize = shape.iter().product();
+            let data = unsafe { self.stream.alloc::<T>(n_elems) }.w()?;
+            return Ok((func, data));
+        }
 
         let template_kernel = format!(
             r#"
