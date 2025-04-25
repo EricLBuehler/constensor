@@ -207,6 +207,50 @@ impl<T: DType> Graph<T> {
         Ok(())
     }
 
+    /// Optimize by performing constant folding:
+    ///   - Fold BinaryOp and UnaryOp when all operands are constant Fill ops.
+    fn optimize_const(&mut self) {
+        // Clone current ops for inspection
+        let ops = self.data.read().unwrap().clone();
+        let mut new_ops = ops.clone();
+        for (i, node) in ops.iter().enumerate() {
+            match &node.op {
+                Op::BinaryOp {
+                    l_id,
+                    r_id,
+                    operator,
+                } => {
+                    let l_idx = l_id.get();
+                    let r_idx = r_id.get();
+                    // both operands are constant fills
+                    if let Op::Fill { v: v1 } = &new_ops[l_idx].op {
+                        if let Op::Fill { v: v2 } = &new_ops[r_idx].op {
+                            let v = operator.as_closure()(*v1, *v2);
+                            new_ops[i] = GraphNode {
+                                op: Op::Fill { v },
+                                shape: node.shape.clone(),
+                            };
+                        }
+                    }
+                }
+                Op::UnaryOp { v_id, operator } => {
+                    let idx = v_id.get();
+                    // operand is a constant fill
+                    if let Op::Fill { v: v0 } = &new_ops[idx].op {
+                        let v = operator.to_closure()(*v0);
+                        new_ops[i] = GraphNode {
+                            op: Op::Fill { v },
+                            shape: node.shape.clone(),
+                        };
+                    }
+                }
+                _ => {}
+            }
+        }
+        // Commit folded constants
+        *self.data.write().unwrap() = new_ops;
+    }
+
     /// Optimize by looking for mul-add pairs, convert to FMA
     fn optimize_fma(&mut self) {
         let ops = self.data.write().unwrap().clone();
@@ -434,9 +478,16 @@ impl<T: DType> Graph<T> {
 
     /// Optimize this graph.
     ///
-    /// Apply the following optimizations
-    /// - Fuse mul,add
+    /// Apply the following optimizations:
+    /// - Constant folding of elementwise fills
+    /// - Fuse mul-add into FMA
+    /// - Inplace binary operations when safe
+    /// - Inplace fused multiply-add when safe
+    /// - Inplace matrix-multiplication when safe
     pub fn optimize(&mut self) {
+        // Constant folding first
+        self.optimize_const();
+        // Fuse mul-add into FMA
         self.optimize_fma();
         self.optimize_inplace_bin();
         self.optimize_inplace_fma();
