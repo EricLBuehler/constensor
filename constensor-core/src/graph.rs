@@ -21,6 +21,7 @@ use petgraph::{dot::Dot, graph::NodeIndex};
 pub struct GraphNode<T: DType> {
     pub op: Op<T>,
     pub shape: Vec<usize>,
+    pub strides: Vec<usize>,
 }
 
 #[derive(Clone)]
@@ -44,10 +45,11 @@ impl<T: DType> Graph<T> {
     }
 
     /// Append an operation to the graph
-    pub(crate) fn add_op<S: Shape>(&self, op: Op<T>) {
+    pub(crate) fn add_op<S: Shape>(&self, op: Op<T>, strides: &[usize]) {
         self.data.write().unwrap().push(GraphNode {
             op,
             shape: S::shape(),
+            strides: strides.to_vec(),
         });
     }
 
@@ -232,7 +234,7 @@ impl<T: DType> Graph<T> {
                             let v = operator.as_closure()(*v1, *v2);
                             new_ops[i] = GraphNode {
                                 op: Op::Fill { v },
-                                shape: node.shape.clone(),
+                                ..node.clone()
                             };
                         }
                     }
@@ -244,7 +246,7 @@ impl<T: DType> Graph<T> {
                         let v = operator.to_closure()(*v0);
                         new_ops[i] = GraphNode {
                             op: Op::Fill { v },
-                            shape: node.shape.clone(),
+                            ..node.clone()
                         };
                     }
                 }
@@ -285,11 +287,11 @@ impl<T: DType> Graph<T> {
                                 b_id: b_id.clone(),
                                 c_id: rhs_add.clone(),
                             },
-                            shape: x.shape.clone(),
+                            ..x.clone()
                         };
                         new_ops[x_id] = GraphNode {
                             op: Op::NoOp,
-                            shape: x.shape.clone(),
+                            ..x.clone()
                         };
 
                         // Look for ops which actually use this one
@@ -404,7 +406,7 @@ impl<T: DType> Graph<T> {
                             r_id: r_id.clone().to_inplace_if(&target == r_id),
                             operator: *operator,
                         },
-                        shape: op.shape.clone(),
+                        ..op.clone()
                     };
                 }
             }
@@ -437,7 +439,7 @@ impl<T: DType> Graph<T> {
                             b_id: b_id.clone().to_inplace_if(&out == b_id),
                             c_id: c_id.clone().to_inplace_if(&out == c_id),
                         },
-                        shape: op.shape.clone(),
+                        ..op.clone()
                     };
                 }
             }
@@ -474,7 +476,7 @@ impl<T: DType> Graph<T> {
                             alpha: *alpha,
                             beta: *beta,
                         },
-                        shape: op.shape.clone(),
+                        ..op.clone()
                     };
                 }
             }

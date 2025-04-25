@@ -9,6 +9,7 @@ use rayon::iter::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelI
 
 use crate::device::Dev;
 use crate::storage::Storage;
+use crate::tensor::is_contiguous_strides;
 use crate::Shape;
 use crate::{
     storage::{BackendDevice, BackendStorage},
@@ -111,6 +112,9 @@ impl BackendDevice for CpuDevice {
 
                 let out_shape = &op.shape;
                 let out_elem_count: usize = out_shape.iter().product();
+
+                let strides = &op.strides;
+                let is_contiguous = is_contiguous_strides(strides, out_shape);
 
                 let computed = match &op.op {
                     Op::BinaryOp {

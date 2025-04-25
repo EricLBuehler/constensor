@@ -9,9 +9,12 @@ use crate::device::Cuda;
 
 use std::{borrow::Cow, marker::PhantomData, ops::Deref, sync::Arc};
 
+use super::contiguous_strides;
+
 #[derive(Clone)]
 pub struct Tensor_<S: Shape, T: DType, D: Dev> {
     storage: Arc<Storage<T>>,
+    strides: Vec<usize>,
     _ghost: PhantomData<(S, T, D)>,
 }
 
@@ -28,11 +31,27 @@ impl<S: Shape, T: DType, D: Dev> Deref for Tensor<S, T, D> {
     }
 }
 
+/// Create a Tensor from storage with its default (contiguous) strides.
 pub(crate) fn from_storage<S: Shape, T: DType, D: Dev>(
     storage: Arc<Storage<T>>,
 ) -> Tensor<S, T, D> {
+    let shape = S::shape();
+    let strides = contiguous_strides(&shape);
     Tensor(Arc::new(Tensor_ {
         storage,
+        strides,
+        _ghost: PhantomData,
+    }))
+}
+
+/// Create a Tensor from storage with explicit strides (for views/transposes).
+fn from_storage_strided<S: Shape, T: DType, D: Dev>(
+    storage: Arc<Storage<T>>,
+    strides: Vec<usize>,
+) -> Tensor<S, T, D> {
+    Tensor(Arc::new(Tensor_ {
+        storage,
+        strides,
         _ghost: PhantomData,
     }))
 }
@@ -48,13 +67,16 @@ macro_rules! tensor_api {
         }
 
         impl<T: DType, const A: usize, const B: usize> Tensor<R2<A, B>, T, $device> {
-            /// Get data for a matrix.
+            /// Get data for a matrix, respecting strides (supports views/transposes).
             pub fn data(&self) -> Result<Cow<Vec<Vec<T>>>> {
                 let data = self.storage.to_cpu_storage()?;
-                let mut rows = Vec::new();
+                let mut rows = Vec::with_capacity(A);
                 for i in 0..A {
-                    let row = (0..B).map(|j| data.as_ref().0[i * A + j]).collect();
-                    rows.push(row)
+                    let base = i * self.strides[0];
+                    let row = (0..B)
+                        .map(|j| data.as_ref().0[base + j * self.strides[1]])
+                        .collect();
+                    rows.push(row);
                 }
                 Ok(Cow::Owned(rows))
             }
@@ -63,15 +85,19 @@ macro_rules! tensor_api {
         impl<T: DType, const A: usize, const B: usize, const C: usize>
             Tensor<R3<A, B, C>, T, $device>
         {
-            /// Get data for a 3 dimensional tensor.
+            /// Get data for a 3 dimensional tensor, respecting strides (supports views/transposes).
             pub fn data(&self) -> Result<Cow<Vec<Vec<Vec<T>>>>> {
                 let data = self.storage.to_cpu_storage()?;
-                let mut top_rows = Vec::new();
+                let mut top_rows = Vec::with_capacity(A);
                 for i in 0..A {
-                    let mut rows = Vec::new();
+                    let off_i = i * self.strides[0];
+                    let mut rows = Vec::with_capacity(B);
                     for j in 0..B {
-                        let row = (0..C).map(|k| data.as_ref().0[i * A + j * B + k]).collect();
-                        rows.push(row)
+                        let off_j = off_i + j * self.strides[1];
+                        let row = (0..C)
+                            .map(|k| data.as_ref().0[off_j + k * self.strides[2]])
+                            .collect();
+                        rows.push(row);
                     }
                     top_rows.push(rows);
                 }
@@ -94,19 +120,22 @@ impl<S: Shape, T: DType, D: Dev> Tensor<S, T, D> {
     }
 }
 
-/*macro_rules! binary_op {
-    ($trait:ident, $fn:ident) => {
-        impl<S: Shape, D: DType> $trait for Tensor<S, D> {
-            type Output = Result<Tensor<S, D>>;
-            fn $fn(self, rhs: Self) -> Self::Output {
-                Ok(Self::fromTensor_(self.inner.$fn(&rhs.inner)?))
-            }
-        }
-    };
+impl<T: DType, const A: usize, const B: usize, D: Dev> Tensor<R2<A, B>, T, D> {
+    /// Return a view of this matrix with dimensions transposed (A x B -> B x A).
+    pub fn t(&self) -> Tensor<R2<B, A>, T, D> {
+        // swap strides for first two dimensions
+        let mut new_strides = self.strides.clone();
+        new_strides.swap(0, 1);
+        from_storage_strided::<R2<B, A>, T, D>(Arc::clone(&self.storage), new_strides)
+    }
 }
 
-binary_op!(Add, add);
-binary_op!(Mul, mul);
-binary_op!(Sub, sub);
-binary_op!(Div, div);
-*/
+impl<T: DType, const A: usize, const B: usize, const C: usize, D: Dev> Tensor<R3<A, B, C>, T, D> {
+    /// Return a view of this tensor with last two reversed axes (A x B x C -> A x C x B).
+    pub fn t(&self) -> Tensor<R3<C, B, A>, T, D> {
+        // swap strides for last two dimensions
+        let mut new_strides = self.strides.clone();
+        new_strides.swap(1, 2);
+        from_storage_strided::<R3<C, B, A>, T, D>(Arc::clone(&self.storage), new_strides)
+    }
+}
