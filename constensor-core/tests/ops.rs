@@ -384,7 +384,6 @@ fn cpu_rand_uniform() {
 fn cpu_randn_zero_std() {
     let mut graph = Graph::empty();
     let _x = GraphTensor::<R1<5>, f32, Cpu>::randn(&mut graph, 3.14, 0.0);
-    graph.visualize("out.png").unwrap();
     let compiled: CompiledGraph<R1<5>, f32, Cpu> = graph.compile().unwrap();
     let tensor = compiled.run().unwrap();
     assert_eq!(tensor.data().unwrap().to_vec(), vec![3.14; 5]);
