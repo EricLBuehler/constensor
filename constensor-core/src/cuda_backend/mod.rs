@@ -112,7 +112,7 @@ impl<T: DType> BackendStorage<T> for CudaStorage<T> {
             {}
 
             template <typename T, typename U>
-            __device__ void cast_kernel(T *in, U *out, const size_t numel) {{
+            __device__ void {function_name}_kernel(T *in, U *out, const size_t numel) {{
                 for (unsigned int i = blockIdx.x * blockDim.x + threadIdx.x; i < numel;
                     i += blockDim.x * gridDim.x) {{
                     out[i] = static_cast<U>(in[i]);
@@ -120,7 +120,7 @@ impl<T: DType> BackendStorage<T> for CudaStorage<T> {
             }}
             
             extern "C" __global__ void {function_name}({} *in, {} *out, const size_t numel) {{
-                {function_name}_kernel(buf, numel);
+                {function_name}_kernel(in, out, numel);
             }}
 
             "#,
@@ -158,6 +158,7 @@ impl<T: DType> BackendStorage<T> for CudaStorage<T> {
         let mut builder = stream.launch_builder(&func);
         builder.arg(&self.slice);
         builder.arg(&out);
+        builder.arg(&n_elems);
         unsafe { builder.launch(cfg).w()? };
 
         // Record an event once this kernel completes
@@ -320,6 +321,7 @@ fn cuda_include_dir() -> Option<PathBuf> {
 fn compile_ptx(template_kernel: String) -> Result<Ptx> {
     cudarc::nvrtc::compile_ptx_with_opts(
         template_kernel,
+        // Compile PTX without hardcoding an architecture so it can JIT to the current device
         CompileOptions {
             use_fast_math: Some(true),
             include_paths: vec![cuda_include_dir()
@@ -327,7 +329,6 @@ fn compile_ptx(template_kernel: String) -> Result<Ptx> {
                 .join("include")
                 .display()
                 .to_string()],
-            arch: Some("sm_90"),
             ..Default::default()
         },
     )
