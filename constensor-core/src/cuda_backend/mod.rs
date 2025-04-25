@@ -366,8 +366,12 @@ impl BackendDevice for CudaDevice {
                     dep_graph.add_edge(l_id.get(), idx, ());
                     dep_graph.add_edge(r_id.get(), idx, ());
                 }
-                // NoOp and Fill/Arange don’t create incoming edges
-                Op::NoOp | Op::Fill { .. } | Op::Arange { .. } => {}
+                // These don’t create incoming edges
+                Op::NoOp
+                | Op::Fill { .. }
+                | Op::Rand { .. }
+                | Op::Randn { .. }
+                | Op::Arange { .. } => {}
             }
         }
 
