@@ -1,10 +1,13 @@
 use cudarc::{
     cublas::CudaBlas,
-    driver::{CudaFunction, CudaModule, CudaSlice, LaunchConfig, PushKernelArg},
+    driver::{
+        CudaEvent, CudaFunction, CudaModule, CudaSlice, CudaStream, LaunchConfig, PushKernelArg,
+    },
     nvrtc::{CompileOptions, Ptx},
 };
 use error::WrapErr;
 use petgraph::{algo::toposort, prelude::DiGraphMap};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::{
     borrow::Cow,
     collections::{HashMap, HashSet},
@@ -31,17 +34,34 @@ pub struct CudaDevice {
     context: Arc<cudarc::driver::CudaContext>,
     stream: Arc<cudarc::driver::CudaStream>,
     modules: Arc<RwLock<Vec<Arc<CudaModule>>>>,
+    streams: Arc<Vec<Arc<CudaStream>>>,
+    stream_index: Arc<AtomicUsize>,
 }
 
 impl CudaDevice {
     pub(crate) fn new(ordinal: usize) -> Result<Self> {
         let context = cudarc::driver::CudaContext::new(ordinal).w()?;
         let stream = context.new_stream().w()?;
+        // Create a pool of 8 streams for concurrent kernel execution
+        let mut pool = Vec::with_capacity(8);
+        for _ in 0..8 {
+            pool.push(context.new_stream().w()?);
+        }
+        let streams = Arc::new(pool);
+        let stream_index = Arc::new(AtomicUsize::new(0));
         Ok(Self {
             context,
             stream,
             modules: Arc::new(RwLock::new(vec![])),
+            streams,
+            stream_index,
         })
+    }
+
+    /// Round-robin selection of a stream from the pool
+    fn select_stream(&self) -> Arc<CudaStream> {
+        let idx = self.stream_index.fetch_add(1, Ordering::SeqCst) % self.streams.len();
+        self.streams[idx].clone()
     }
 
     pub(crate) fn stream(&self) -> Arc<cudarc::driver::CudaStream> {
@@ -67,6 +87,7 @@ impl Deref for CudaDevice {
 pub struct CudaStorage<T: DType> {
     slice: CudaSlice<T>,
     device: CudaDevice,
+    event: CudaEvent,
 }
 
 impl<T: DType> BackendStorage<T> for CudaStorage<T> {
@@ -99,6 +120,8 @@ pub enum CudaCompiledKernel<T: DType> {
         alpha: T,
         /// scale factor for lhs*rhs
         beta: T,
+        cublas: cudarc::cublas::CudaBlas,
+        stream: Arc<CudaStream>,
     },
 }
 
@@ -228,7 +251,7 @@ impl CudaDevice {
         shape: &[usize],
     ) -> Result<CudaStorage<T>> {
         let n_elems: usize = shape.iter().product();
-        let stream = self.stream();
+        let stream = self.select_stream();
 
         let cfg = LaunchConfig::for_num_elems(n_elems as u32);
 
@@ -237,9 +260,14 @@ impl CudaDevice {
         builder.arg(&n_elems);
         unsafe { builder.launch(cfg).w()? };
 
+        // Record an event once this kernel completes
+        let event = self.context.new_event(None).w()?;
+        event.record(&stream).w()?;
+
         Ok(CudaStorage {
             slice: data.clone(),
             device: self.clone(),
+            event,
         })
     }
 
@@ -381,6 +409,11 @@ impl BackendDevice for CudaDevice {
                     assert_eq!(r_shape.len(), 3);
                     let (b, m, _k) = (l_shape[0], l_shape[1], l_shape[2]);
                     let n = r_shape[2];
+
+                    // Select our stream
+                    let stream = self.select_stream();
+                    let cublas = CudaBlas::new(stream.clone()).unwrap();
+
                     matmuls.push(CudaCompiledKernel::MatMul {
                         l_id: l_id.get(),
                         r_id: r_id.get(),
@@ -392,6 +425,8 @@ impl BackendDevice for CudaDevice {
                         order: idx,
                         alpha: *alpha,
                         beta: *beta,
+                        cublas,
+                        stream,
                     });
                 }
                 _ => {
@@ -433,11 +468,8 @@ impl BackendDevice for CudaDevice {
         // Then append all MatMul kernels
         kernels.extend(matmuls);
 
-        let cublas = CudaBlas::new(self.stream()).unwrap();
-
         Ok(CompiledGraph::Cuda {
             kernels,
-            cublas,
             ghost: PhantomData,
         })
     }
@@ -447,11 +479,7 @@ impl BackendDevice for CudaDevice {
         graph: &CompiledGraph<S, T, D>,
     ) -> Result<Self::Storage<T>> {
         #[allow(irrefutable_let_patterns)]
-        let CompiledGraph::Cuda {
-            kernels,
-            cublas,
-            ghost: _,
-        } = graph
+        let CompiledGraph::Cuda { kernels, ghost: _ } = graph
         else {
             unreachable!()
         };
@@ -480,27 +508,40 @@ impl BackendDevice for CudaDevice {
                     order,
                     alpha,
                     beta,
+                    cublas,
+                    stream,
                 } => {
                     // obtain input buffers
                     let lhs = last_storage.get(&l_id).expect("lhs storage missing");
                     let rhs = last_storage.get(&r_id).expect("rhs storage missing");
 
+                    // Wait for prior kernels
+                    lhs.event.synchronize().w()?;
+                    rhs.event.synchronize().w()?;
+
                     let elems = m * n;
                     // prepare output buffer, copy initial if provided
-                    let mut out = unsafe { self.stream().alloc::<T>(elems) }.w()?;
+                    let mut out = unsafe { stream.alloc::<T>(elems) }.w()?;
                     if let Some(o_idx) = o_id {
                         let init = last_storage.get(&o_idx).expect("output storage missing");
+                        // ensure the initial output is ready
+                        init.event.synchronize().w()?;
                         self.stream().memcpy_dtod(&init.slice, &mut out).w()?;
                     }
 
-                    // Note: cublas expects (alpha: product scale, beta: output scale)
+                    // Launch GEMM on the pooled stream
                     T::launch_gemm_cuda(
-                        cublas, &lhs.slice, &rhs.slice, *b, *m, *n, *k, &mut out, *beta, *alpha,
+                        &cublas, &lhs.slice, &rhs.slice, *b, *m, *n, *k, &mut out, *beta, *alpha,
                     )?;
+
+                    // Record completion event for the MatMul result
+                    let event = self.context.new_event(None).w()?;
+                    event.record(&stream).w()?;
 
                     let storage = CudaStorage {
                         slice: out,
                         device: self.clone(),
+                        event,
                     };
                     last_storage.insert(order, storage);
                 }
