@@ -22,7 +22,7 @@ rand.workspace = true
 rand_distr.workspace = true
 
 [features]
-default = ["half", "bfloat"]
+default = []
 all = ["cuda", "half", "bfloat"]
 cuda = ["cudarc"]
 half = ["dep:half"]

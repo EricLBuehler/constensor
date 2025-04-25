@@ -377,9 +377,9 @@ macro_rules! test_for_device_rand {
             #[test]
             fn rand_uniform() {
                 let mut graph = Graph::empty();
-                let _x: GraphTensor<R1<5>, f32, $dev> =
-                    GraphTensor::<R1<5>, f32, $dev>::rand(&mut graph);
-                let compiled: CompiledGraph<R1<5>, f32, $dev> = graph.compile().unwrap();
+                let _x: GraphTensor<R1<8>, f32, $dev> =
+                    GraphTensor::<R1<8>, f32, $dev>::rand(&mut graph);
+                let compiled: CompiledGraph<R1<8>, f32, $dev> = graph.compile().unwrap();
                 let tensor = compiled.run().unwrap();
                 let data = tensor.data().unwrap().to_vec();
                 for &v in &data {
@@ -390,11 +390,11 @@ macro_rules! test_for_device_rand {
             #[test]
             fn randn_zero_std() {
                 let mut graph = Graph::empty();
-                let _x: GraphTensor<R1<5>, f32, $dev> =
-                    GraphTensor::<R1<5>, f32, $dev>::randn(&mut graph, PI, 0.0);
-                let compiled: CompiledGraph<R1<5>, f32, $dev> = graph.compile().unwrap();
+                let _x: GraphTensor<R1<8>, f32, $dev> =
+                    GraphTensor::<R1<8>, f32, $dev>::randn(&mut graph, PI, 0.0);
+                let compiled: CompiledGraph<R1<8>, f32, $dev> = graph.compile().unwrap();
                 let tensor = compiled.run().unwrap();
-                assert_eq!(tensor.data().unwrap().to_vec(), vec![PI; 5]);
+                assert_eq!(tensor.data().unwrap().to_vec(), vec![PI; 8]);
             }
         }
     };

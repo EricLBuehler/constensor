@@ -10,7 +10,7 @@ use error::WrapErr;
 use petgraph::{algo::toposort, prelude::DiGraphMap};
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
-    Arc,
+    Arc, RwLock,
 };
 use std::{
     borrow::Cow,
@@ -20,7 +20,6 @@ use std::{
     marker::PhantomData,
     ops::Deref,
     path::{Path, PathBuf},
-    sync::{Arc, RwLock},
 };
 
 use crate::{
@@ -601,7 +600,7 @@ impl BackendDevice for CudaDevice {
                     order,
                 } => {
                     let mut slice = unsafe { stream.alloc::<T>(*elem_count).w()? };
-                    rng.fill_with_uniform(&mut slice).w()?;
+                    T::cuda_fill_with_uniform(&rng, &mut slice)?;
 
                     // Record completion event for the MatMul result
                     let event = self.context.new_event(None).w()?;
@@ -623,7 +622,7 @@ impl BackendDevice for CudaDevice {
                     order,
                 } => {
                     let mut slice = unsafe { stream.alloc::<T>(*elem_count).w()? };
-                    rng.fill_with_normal(&mut slice, *mean, *std).w()?;
+                    T::cuda_fill_with_normal(&rng, &mut slice, *mean, *std)?;
 
                     // Record completion event for the MatMul result
                     let event = self.context.new_event(None).w()?;

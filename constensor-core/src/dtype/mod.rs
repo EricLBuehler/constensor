@@ -3,7 +3,6 @@ use std::{
     ops::{Add, Div, Mul, Sub},
 };
 
-use gemm::GemmDispatch;
 #[cfg(feature = "bfloat")]
 use half::bf16;
 #[cfg(feature = "half")]
@@ -11,9 +10,13 @@ use half::f16;
 
 #[cfg(feature = "cuda")]
 use cudarc::driver::DeviceRepr;
+
+use gemm::GemmDispatch;
+use rand::RandDispatch;
 use simd_ops::SimdSupported;
 
 mod gemm;
+mod rand;
 mod simd_ops;
 
 /// Type which can be square-rooted.
@@ -89,6 +92,7 @@ pub trait DTypeOps:
     + Sqrtable
     + SimdSupported
     + GemmDispatch
+    + RandDispatch
 {
 }
 

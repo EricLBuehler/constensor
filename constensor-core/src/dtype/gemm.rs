@@ -323,6 +323,8 @@ instantiate_gemm!(i64, 0, SIMD);
 instantiate_gemm!(f32, 0., GEMM);
 instantiate_gemm!(f64, 0., GEMM);
 #[cfg(feature = "bfloat")]
-instantiate_gemm!(bf16, bf16::from_f32(0.), SIMD);
+// Use naive implementation for bf16 to avoid CPU SIMD half-precision assembly requirements
+instantiate_gemm!(bf16, bf16::from_f32(0.), NAIVE);
 #[cfg(feature = "half")]
-instantiate_gemm!(f16, f16::from_f32(0.), GEMM);
+// Use naive implementation for f16 to avoid CPU SIMD half-precision assembly requirements
+instantiate_gemm!(f16, f16::from_f32(0.), NAIVE);
