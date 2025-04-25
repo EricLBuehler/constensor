@@ -304,6 +304,10 @@ fn handle_node<T: DType>(
             format!("( static_cast<T>(fma(static_cast<double>({a_name}), static_cast<double>({b_name}), static_cast<double>({c_name}))))")
         }
         Op::NoOp => unreachable!("no-op ops should never be reached."),
+        Op::Permute { v_id } => {
+            let name = handle_node(current_name, header, &graph[v_id.get()], graph);
+            format!("({})", name)
+        }
         Op::MatMul { .. } | Op::Rand | Op::Randn { .. } => {
             unreachable!("op should have its own split!")
         }
@@ -468,7 +472,7 @@ impl BackendDevice for CudaDevice {
     ) -> Result<CompiledGraph<S, T, D>> {
         // Build a dependency graph of tensor indices
         let mut dep_graph = DiGraphMap::<usize, ()>::new();
-        for idx in 0..graph.len() {
+        for idx in graph.iter().map(|node| node.id.get()) {
             dep_graph.add_node(idx);
         }
 
@@ -486,9 +490,17 @@ impl BackendDevice for CudaDevice {
                     dep_graph.add_edge(b_id.get(), idx, ());
                     dep_graph.add_edge(c_id.get(), idx, ());
                 }
-                Op::MatMul { l_id, r_id, .. } => {
+                Op::MatMul {
+                    l_id, r_id, o_id, ..
+                } => {
                     dep_graph.add_edge(l_id.get(), idx, ());
                     dep_graph.add_edge(r_id.get(), idx, ());
+                    if let Some(o_id) = o_id {
+                        dep_graph.add_edge(o_id.get(), idx, ());
+                    }
+                }
+                Op::Permute { v_id } => {
+                    dep_graph.add_edge(v_id.get(), idx, ());
                 }
                 // These don’t create incoming edges
                 Op::NoOp | Op::Fill { .. } | Op::Rand | Op::Randn { .. } | Op::Arange { .. } => {}
