@@ -434,7 +434,8 @@ impl BackendDevice for CudaDevice {
                     let should_group = if let Some((last_group, _)) = splits.last_mut() {
                         let last_idx = *last_group.last().unwrap();
                         let last_shape_key = graph[last_idx].shape.clone();
-                        last_shape_key == shape_key
+                        // Force all matmul inputs to have their own
+                        last_shape_key == shape_key && !matmul_inputs.contains(&idx)
                     } else {
                         false
                     };
@@ -531,12 +532,12 @@ impl BackendDevice for CudaDevice {
 
                     // Launch GEMM on the pooled stream
                     T::launch_gemm_cuda(
-                        &cublas, &lhs.slice, &rhs.slice, *b, *m, *n, *k, &mut out, *beta, *alpha,
+                        cublas, &lhs.slice, &rhs.slice, *b, *m, *n, *k, &mut out, *beta, *alpha,
                     )?;
 
                     // Record completion event for the MatMul result
                     let event = self.context.new_event(None).w()?;
-                    event.record(&stream).w()?;
+                    event.record(stream).w()?;
 
                     let storage = CudaStorage {
                         slice: out,
