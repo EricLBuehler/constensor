@@ -1,12 +1,9 @@
-use super::DType;
-use crate::Result;
-// Bring in the CUDA RNG and slice types when using CUDA
 #[cfg(feature = "cuda")]
-use crate::cuda_backend::error::WrapErr;
-#[cfg(feature = "cuda")]
-use cudarc::curand::CudaRng;
-#[cfg(feature = "cuda")]
-use cudarc::driver::CudaSlice;
+use {
+    super::DType,
+    crate::{cuda_backend::error::WrapErr, Result},
+    cudarc::{curand::CudaRng, driver::CudaSlice},
+};
 // Optional half-precision types
 #[cfg(feature = "bfloat")]
 use half::bf16;
@@ -185,3 +182,6 @@ impl RandDispatch for bf16 {
         )
     }
 }
+
+#[cfg(not(feature = "cuda"))]
+impl<T> RandDispatch for T {}
