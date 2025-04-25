@@ -253,6 +253,18 @@ macro_rules! instantiate_gemm {
                 let n_blocks = n / BLOCK_SIZE;
                 let rem = n % BLOCK_SIZE;
 
+                let lhs_bs = lhs_stride[0];
+                let lhs_rs = lhs_stride[1];
+                let lhs_cs = lhs_stride[2];
+
+                let rhs_bs = rhs_stride[0];
+                let rhs_rs = rhs_stride[1];
+                let rhs_cs = rhs_stride[2];
+
+                let out_bs = out_stride[0];
+                let out_rs = out_stride[1];
+                let out_cs = out_stride[2];
+
                 debug_assert_eq!(lhs.len(), b * m * k);
                 debug_assert_eq!(lhs_stride.len(), 3);
                 debug_assert_eq!(rhs.len(), b * k * n);
@@ -262,18 +274,18 @@ macro_rules! instantiate_gemm {
 
                 for batch in 0..b {
                     // Compute base pointers once per batch
-                    let lhs_base = unsafe { lhs.as_ptr().add(batch * m * k) };
-                    let rhs_base = unsafe { rhs.as_ptr().add(batch * k * n) };
-                    let out_base = unsafe { out.as_mut_ptr().add(batch * m * n) };
+                    let lhs_base = unsafe { lhs.as_ptr().add(batch * lhs_bs) };
+                    let rhs_base = unsafe { rhs.as_ptr().add(batch * rhs_bs) };
+                    let out_base = unsafe { out.as_mut_ptr().add(batch * out_bs) };
 
                     for i in 0..m {
                         // Pointer to the start of the current output row
-                        let out_row_ptr = unsafe { out_base.add(i * n) };
+                        let out_row_ptr = unsafe { out_base.add(i * out_rs) };
 
                         // Process full SIMD blocks
                         for block in 0..n_blocks {
                             let off = block * BLOCK_SIZE;
-                            let out_ptr = unsafe { out_row_ptr.add(off) };
+                            let out_ptr = unsafe { out_row_ptr.add(off * out_cs) };
                             let out_chunk =
                                 unsafe { std::slice::from_raw_parts_mut(out_ptr, BLOCK_SIZE) };
 
@@ -291,9 +303,9 @@ macro_rules! instantiate_gemm {
                             }
 
                             for p in 0..k {
-                                let a_val = unsafe { *lhs_base.add(i * k + p) };
+                                let a_val = unsafe { *lhs_base.add(i * lhs_rs + p * lhs_cs) };
                                 let a_arr = [a_val; BLOCK_SIZE];
-                                let b_ptr = unsafe { rhs_base.add(p * n + off) };
+                                let b_ptr = unsafe { rhs_base.add(p * rhs_rs + off * rhs_cs) };
                                 let b_chunk =
                                     unsafe { std::slice::from_raw_parts(b_ptr, BLOCK_SIZE) };
                                 <Self as SimdSupported>::fma_op_inplace_c(
@@ -305,7 +317,7 @@ macro_rules! instantiate_gemm {
                         // Handle remainder elements
                         if rem > 0 {
                             let off = n_blocks * BLOCK_SIZE;
-                            let out_ptr = unsafe { out_row_ptr.add(off) };
+                            let out_ptr = unsafe { out_row_ptr.add(off * out_cs) };
                             let out_chunk = unsafe { std::slice::from_raw_parts_mut(out_ptr, rem) };
 
                             if beta != $init {
@@ -319,9 +331,10 @@ macro_rules! instantiate_gemm {
                             }
 
                             for p in 0..k {
-                                let a_val = unsafe { *lhs_base.add(i * k + p) };
+                                let a_val = unsafe { *lhs_base.add(i * lhs_rs + p * lhs_cs) };
                                 for j in 0..rem {
-                                    let b_val = unsafe { *rhs_base.add(p * n + off + j) };
+                                    let b_val =
+                                        unsafe { *rhs_base.add(p * rhs_rs + (off + j) * rhs_cs) };
                                     out_chunk[j] += a_val * b_val;
                                 }
                             }
