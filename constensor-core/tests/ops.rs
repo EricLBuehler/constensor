@@ -370,23 +370,36 @@ test_for_device_sqrt!(Cpu, cpu_tests_sqrt);
 #[cfg(feature = "cuda")]
 test_for_device_sqrt!(Cuda<0>, cuda_tests_sqrt);
 
-#[test]
-fn cpu_rand_uniform() {
-    let mut graph = Graph::empty();
-    let _x = GraphTensor::<R1<5>, f32, Cpu>::rand(&mut graph);
-    let compiled: CompiledGraph<R1<5>, f32, Cpu> = graph.compile().unwrap();
-    let tensor = compiled.run().unwrap();
-    let data = tensor.data().unwrap().to_vec();
-    for &v in &data {
-        assert!((0.0..1.0).contains(&v), "value {v} out of [0,1)");
-    }
+macro_rules! test_for_device_rand {
+    ($dev:ty, $name:ident) => {
+        mod $name {
+            use super::*;
+            #[test]
+            fn rand_uniform() {
+                let mut graph = Graph::empty();
+                let _x: GraphTensor<R1<5>, f32, $dev> =
+                    GraphTensor::<R1<5>, f32, $dev>::rand(&mut graph);
+                let compiled: CompiledGraph<R1<5>, f32, $dev> = graph.compile().unwrap();
+                let tensor = compiled.run().unwrap();
+                let data = tensor.data().unwrap().to_vec();
+                for &v in &data {
+                    assert!((0.0..1.0).contains(&v), "value {v} out of [0,1)");
+                }
+            }
+
+            #[test]
+            fn randn_zero_std() {
+                let mut graph = Graph::empty();
+                let _x: GraphTensor<R1<5>, f32, $dev> =
+                    GraphTensor::<R1<5>, f32, $dev>::randn(&mut graph, PI, 0.0);
+                let compiled: CompiledGraph<R1<5>, f32, $dev> = graph.compile().unwrap();
+                let tensor = compiled.run().unwrap();
+                assert_eq!(tensor.data().unwrap().to_vec(), vec![PI; 5]);
+            }
+        }
+    };
 }
 
-#[test]
-fn cpu_randn_zero_std() {
-    let mut graph = Graph::empty();
-    let _x = GraphTensor::<R1<5>, f32, Cpu>::randn(&mut graph, PI, 0.0);
-    let compiled: CompiledGraph<R1<5>, f32, Cpu> = graph.compile().unwrap();
-    let tensor = compiled.run().unwrap();
-    assert_eq!(tensor.data().unwrap().to_vec(), vec![PI; 5]);
-}
+test_for_device_rand!(Cpu, cpu_tests_rand);
+#[cfg(feature = "cuda")]
+test_for_device_rand!(Cuda<0>, cuda_tests_rand);

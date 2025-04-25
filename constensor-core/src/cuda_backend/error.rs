@@ -12,6 +12,9 @@ pub enum CudaError {
     #[error(transparent)]
     Cublas(#[from] cudarc::cublas::result::CublasError),
 
+    #[error(transparent)]
+    Curand(#[from] cudarc::curand::result::CurandError),
+
     #[error("{cuda} when loading {module_name}")]
     Load {
         cuda: cudarc::driver::DriverError,

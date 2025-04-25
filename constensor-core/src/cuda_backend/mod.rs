@@ -1,5 +1,6 @@
 use cudarc::{
     cublas::CudaBlas,
+    curand::CudaRng,
     driver::{
         CudaEvent, CudaFunction, CudaModule, CudaSlice, CudaStream, LaunchConfig, PushKernelArg,
     },
@@ -7,7 +8,10 @@ use cudarc::{
 };
 use error::WrapErr;
 use petgraph::{algo::toposort, prelude::DiGraphMap};
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{
+    atomic::{AtomicUsize, Ordering},
+    Arc,
+};
 use std::{
     borrow::Cow,
     collections::{HashMap, HashSet},
@@ -123,6 +127,20 @@ pub enum CudaCompiledKernel<T: DType> {
         cublas: cudarc::cublas::CudaBlas,
         stream: Arc<CudaStream>,
     },
+    Rand {
+        rng: Arc<CudaRng>,
+        stream: Arc<CudaStream>,
+        elem_count: usize,
+        order: usize,
+    },
+    Randn {
+        mean: T,
+        std: T,
+        rng: Arc<CudaRng>,
+        stream: Arc<CudaStream>,
+        elem_count: usize,
+        order: usize,
+    },
 }
 
 #[derive(Debug)]
@@ -190,7 +208,9 @@ fn handle_node<T: DType>(
             format!("( static_cast<T>(fma(static_cast<double>({a_name}), static_cast<double>({b_name}), static_cast<double>({c_name}))))")
         }
         Op::NoOp => unreachable!("no-op ops should never be reached."),
-        Op::MatMul { .. } => unreachable!("matmul op should have its own split!"),
+        Op::MatMul { .. } | Op::Rand { .. } | Op::Randn { .. } => {
+            unreachable!("matmul op should have its own split!")
+        }
     }
 }
 
@@ -433,6 +453,30 @@ impl BackendDevice for CudaDevice {
                         stream,
                     });
                 }
+                Op::Rand => {
+                    let stream = self.select_stream();
+                    let curand = Arc::new(CudaRng::new(0, stream.clone()).w()?);
+
+                    matmuls.push(CudaCompiledKernel::Rand {
+                        rng: curand,
+                        stream,
+                        elem_count: graph[idx].shape.iter().product(),
+                        order: idx,
+                    });
+                }
+                Op::Randn { mean, std } => {
+                    let stream = self.select_stream();
+                    let curand = Arc::new(CudaRng::new(0, stream.clone()).w()?);
+
+                    matmuls.push(CudaCompiledKernel::Randn {
+                        mean: *mean,
+                        std: *std,
+                        rng: curand,
+                        stream,
+                        elem_count: graph[idx].shape.iter().product(),
+                        order: idx,
+                    });
+                }
                 _ => {
                     let shape_key = graph[idx].shape.clone();
                     let should_group = if let Some((last_group, _)) = splits.last_mut() {
@@ -545,6 +589,48 @@ impl BackendDevice for CudaDevice {
 
                     let storage = CudaStorage {
                         slice: out,
+                        device: self.clone(),
+                        event,
+                    };
+                    last_storage.insert(order, storage);
+                }
+                CudaCompiledKernel::Rand {
+                    stream,
+                    rng,
+                    elem_count,
+                    order,
+                } => {
+                    let mut slice = unsafe { stream.alloc::<T>(*elem_count).w()? };
+                    rng.fill_with_uniform(&mut slice).w()?;
+
+                    // Record completion event for the MatMul result
+                    let event = self.context.new_event(None).w()?;
+                    event.record(stream).w()?;
+
+                    let storage = CudaStorage {
+                        slice,
+                        device: self.clone(),
+                        event,
+                    };
+                    last_storage.insert(order, storage);
+                }
+                CudaCompiledKernel::Randn {
+                    mean,
+                    std,
+                    stream,
+                    rng,
+                    elem_count,
+                    order,
+                } => {
+                    let mut slice = unsafe { stream.alloc::<T>(*elem_count).w()? };
+                    rng.fill_with_normal(&mut slice, *mean, *std).w()?;
+
+                    // Record completion event for the MatMul result
+                    let event = self.context.new_event(None).w()?;
+                    event.record(stream).w()?;
+
+                    let storage = CudaStorage {
+                        slice,
                         device: self.clone(),
                         event,
                     };
