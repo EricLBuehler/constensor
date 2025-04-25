@@ -1,3 +1,5 @@
+use std::f32::consts::PI;
+
 #[cfg(feature = "cuda")]
 use constensor_core::Cuda;
 use constensor_core::{CompiledGraph, Cpu, Graph, GraphTensor, R1, R2, R3};
@@ -376,15 +378,15 @@ fn cpu_rand_uniform() {
     let tensor = compiled.run().unwrap();
     let data = tensor.data().unwrap().to_vec();
     for &v in &data {
-        assert!(v >= 0.0 && v < 1.0, "value {} out of [0,1)", v);
+        assert!((0.0..1.0).contains(&v), "value {v} out of [0,1)");
     }
 }
 
 #[test]
 fn cpu_randn_zero_std() {
     let mut graph = Graph::empty();
-    let _x = GraphTensor::<R1<5>, f32, Cpu>::randn(&mut graph, 3.14, 0.0);
+    let _x = GraphTensor::<R1<5>, f32, Cpu>::randn(&mut graph, PI, 0.0);
     let compiled: CompiledGraph<R1<5>, f32, Cpu> = graph.compile().unwrap();
     let tensor = compiled.run().unwrap();
-    assert_eq!(tensor.data().unwrap().to_vec(), vec![3.14; 5]);
+    assert_eq!(tensor.data().unwrap().to_vec(), vec![PI; 5]);
 }
