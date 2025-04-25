@@ -45,11 +45,12 @@ impl BackendDevice for CpuDevice {
     ) -> Result<CompiledGraph<S, T, D>> {
         // Build a dependency graph of tensor indices
         let mut dep_graph = DiGraphMap::<usize, ()>::new();
-        for idx in 0..graph.len() {
-            dep_graph.add_node(idx);
+        for id in graph.iter().map(|node| node.id.get()) {
+            dep_graph.add_node(id);
         }
 
-        for (idx, node) in graph.iter().enumerate() {
+        for node in graph.iter() {
+            let idx = node.id.get();
             match &node.op {
                 Op::BinaryOp { l_id, r_id, .. } => {
                     dep_graph.add_edge(l_id.get(), idx, ());
@@ -72,12 +73,14 @@ impl BackendDevice for CpuDevice {
                         dep_graph.add_edge(o_id.get(), idx, ());
                     }
                 }
+                Op::Permute { v_id } => {
+                    dep_graph.add_edge(v_id.get(), idx, ());
+                }
                 // NoOp, Fill/Arange, Rand/Randn don’t create incoming edges
                 Op::NoOp | Op::Fill { .. } | Op::Arange { .. } | Op::Rand | Op::Randn { .. } => {}
             }
         }
 
-        dbg!(&dep_graph);
         // Compute topological order
         let order = toposort(&dep_graph, None).expect("Cycle detected in graph!");
 
@@ -279,10 +282,17 @@ impl BackendDevice for CpuDevice {
                         out
                     }
                     Op::NoOp => unreachable!("NoOp should not be evaluated."),
+                    Op::Permute { v_id } => {
+                        if v_id.is_inplace() {
+                            results[v_id.get()].take().unwrap()
+                        } else {
+                            let buf = results[v_id.get()].as_ref().unwrap();
+                            PooledBuffer::new((*buf).clone(), pool.clone())
+                        }
+                    }
                 };
 
                 results[idx] = Some(computed);
-                dbg!(&op.strides);
                 results_strides[idx] = Some(op.strides.clone());
             }
 

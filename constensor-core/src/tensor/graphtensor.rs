@@ -31,6 +31,7 @@ impl<const B: usize, const M: usize, const K: usize, T: DType, D: Dev>
         self,
         rhs: GraphTensor<R3<B, K, N>, T, D>,
     ) -> GraphTensor<R3<B, M, N>, T, D> {
+        let id = self.graph.write().unwrap().next_id();
         self.graph.write().unwrap().add_op::<R3<B, M, N>>(
             Op::MatMul {
                 l_id: self.id(),
@@ -41,9 +42,10 @@ impl<const B: usize, const M: usize, const K: usize, T: DType, D: Dev>
                 beta: T::ONE,
             },
             &self.strides,
+            &id,
         );
         GraphTensor {
-            id: self.graph.write().unwrap().next_id(),
+            id,
             graph: self.graph.clone(),
             strides: self.strides.clone(),
             _ghost: PhantomData,
@@ -60,6 +62,7 @@ impl<const B: usize, const M: usize, const K: usize, T: DType, D: Dev>
         alpha: T,
         beta: T,
     ) -> GraphTensor<R3<B, M, N>, T, D> {
+        let id = self.graph.write().unwrap().next_id();
         self.graph.write().unwrap().add_op::<R3<B, M, N>>(
             Op::MatMul {
                 l_id: self.id(),
@@ -70,9 +73,10 @@ impl<const B: usize, const M: usize, const K: usize, T: DType, D: Dev>
                 beta,
             },
             &self.strides,
+            &id,
         );
         GraphTensor {
-            id: self.graph.write().unwrap().next_id(),
+            id,
             graph: self.graph.clone(),
             strides: self.strides.clone(),
             _ghost: PhantomData,
@@ -86,7 +90,7 @@ impl<S: Shape, T: DType, D: Dev> GraphTensor<S, T, D> {
     pub fn fill(graph: &mut Graph<T>, v: T) -> Self {
         let id = graph.next_id();
         let strides = contiguous_strides(&S::shape());
-        graph.add_op::<S>(Op::Fill { v }, &strides);
+        graph.add_op::<S>(Op::Fill { v }, &strides, &id);
         Self {
             id,
             graph: Arc::new(RwLock::new(graph.clone())),
@@ -110,15 +114,17 @@ impl<S: Shape, T: DType, D: Dev> GraphTensor<S, T, D> {
     #[must_use]
     /// Elementwise unary square root.
     pub fn sqrt(self) -> GraphTensor<S, T, D> {
+        let id = self.graph.write().unwrap().next_id();
         self.graph.write().unwrap().add_op::<S>(
             Op::UnaryOp {
                 v_id: self.id(),
                 operator: UnaryOpType::Sqrt,
             },
             &self.strides,
+            &id,
         );
         Self {
-            id: self.graph.write().unwrap().next_id(),
+            id,
             graph: self.graph.clone(),
             strides: self.strides.clone(),
             _ghost: PhantomData,
@@ -130,7 +136,7 @@ impl<S: Shape, T: DType, D: Dev> GraphTensor<S, T, D> {
     pub fn rand(graph: &mut Graph<T>) -> Self {
         let id = graph.next_id();
         let strides = contiguous_strides(&S::shape());
-        graph.add_op::<S>(Op::Rand, &strides);
+        graph.add_op::<S>(Op::Rand, &strides, &id);
         GraphTensor {
             id,
             graph: Arc::new(RwLock::new(graph.clone())),
@@ -144,7 +150,7 @@ impl<S: Shape, T: DType, D: Dev> GraphTensor<S, T, D> {
     pub fn randn(graph: &mut Graph<T>, mean: T, std: T) -> Self {
         let id = graph.next_id();
         let strides = contiguous_strides(&S::shape());
-        graph.add_op::<S>(Op::Randn { mean, std }, &strides);
+        graph.add_op::<S>(Op::Randn { mean, std }, &strides, &id);
         GraphTensor {
             id,
             graph: Arc::new(RwLock::new(graph.clone())),
@@ -180,6 +186,7 @@ impl<const A: usize, T: DType, D: Dev> GraphTensor<R1<A>, T, D> {
                 stop,
             },
             &strides,
+            &id,
         );
         Self {
             id,
@@ -196,8 +203,18 @@ impl<T: DType, const A: usize, const B: usize, D: Dev> GraphTensor<R2<A, B>, T, 
         // swap strides for first two dimensions
         let mut new_strides = self.strides.clone();
         new_strides.swap(0, 1);
+
+        let id = self.graph.write().unwrap().next_id();
+
+        self.graph.write().unwrap().add_op::<R1<A>>(
+            Op::Permute {
+                v_id: self.id.clone(),
+            },
+            &new_strides,
+            &id,
+        );
         GraphTensor {
-            id: self.graph.write().unwrap().next_id(),
+            id,
             graph: self.graph.clone(),
             strides: new_strides,
             _ghost: PhantomData,
@@ -213,8 +230,18 @@ impl<T: DType, const A: usize, const B: usize, const C: usize, D: Dev>
         // swap strides for last two dimensions
         let mut new_strides = self.strides.clone();
         new_strides.swap(1, 2);
+
+        let id = self.graph.write().unwrap().next_id();
+
+        self.graph.write().unwrap().add_op::<R1<A>>(
+            Op::Permute {
+                v_id: self.id.clone(),
+            },
+            &new_strides,
+            &id,
+        );
         GraphTensor {
-            id: self.graph.write().unwrap().next_id(),
+            id,
             graph: self.graph.clone(),
             strides: new_strides,
             _ghost: PhantomData,
@@ -228,6 +255,7 @@ macro_rules! graphtensor_binop {
             type Output = GraphTensor<S, T, D>;
             /// Add an elementwise operation to the graph.
             fn $fn_name(self, rhs: Self) -> Self::Output {
+                let id = self.graph.write().unwrap().next_id();
                 self.graph.write().unwrap().add_op::<S>(
                     Op::BinaryOp {
                         l_id: self.id(),
@@ -235,9 +263,10 @@ macro_rules! graphtensor_binop {
                         operator: BinaryOpType::$trait,
                     },
                     &self.strides,
+                    &id,
                 );
                 Self {
-                    id: self.graph.write().unwrap().next_id(),
+                    id,
                     graph: self.graph.clone(),
                     strides: self.strides.clone(),
                     _ghost: PhantomData,
@@ -256,15 +285,17 @@ impl<S: Shape, T: DType + Neg<Output = T>, D: Dev> Neg for GraphTensor<S, T, D> 
     type Output = GraphTensor<S, T, D>;
     /// Add an elementwise addition operation to the graph.
     fn neg(self) -> Self::Output {
+        let id = self.graph.write().unwrap().next_id();
         self.graph.write().unwrap().add_op::<S>(
             Op::UnaryOp {
                 v_id: self.id(),
                 operator: UnaryOpType::Neg,
             },
             &self.strides,
+            &id,
         );
         Self {
-            id: self.graph.write().unwrap().next_id(),
+            id,
             graph: self.graph.clone(),
             strides: self.strides.clone(),
             _ghost: PhantomData,
