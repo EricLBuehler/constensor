@@ -6,12 +6,13 @@ pub(crate) fn gemm_config<T>(
     alpha: T,
     beta: T,
     (b, m, n, k): (usize, usize, usize, usize),
+    lhs_stride: &[usize],
+    rhs_stride: &[usize],
+    out_stride: &[usize],
 ) -> Result<StridedBatchedConfig<T>> {
     // https://docs.nvidia.com/cuda/cublas/index.html#cublas-t-gemm
     use cudarc::cublas::sys::cublasOperation_t;
 
-    let lhs_stride = [m * k, k, 1];
-    let rhs_stride = [k * n, n, 1];
     let lhs_dims = [b, m, k];
     let rhs_dims = [b, k, n];
 
@@ -28,8 +29,9 @@ pub(crate) fn gemm_config<T>(
         (k as i32, cublasOperation_t::CUBLAS_OP_T)
     } else {
         Err(Error::MatMulNonContiguous {
-            lhs_stride,
-            rhs_stride,
+            lhs_stride: lhs_stride.to_vec(),
+            rhs_stride: rhs_stride.to_vec(),
+            out_stride: out_stride.to_vec(),
             mnk: (m, n, k),
         })?
     };
@@ -42,8 +44,9 @@ pub(crate) fn gemm_config<T>(
         (m as i32, cublasOperation_t::CUBLAS_OP_T)
     } else {
         Err(Error::MatMulNonContiguous {
-            lhs_stride,
-            rhs_stride,
+            lhs_stride: lhs_stride.to_vec(),
+            rhs_stride: rhs_stride.to_vec(),
+            out_stride: out_stride.to_vec(),
             mnk: (m, n, k),
         })?
     };
@@ -62,27 +65,42 @@ pub(crate) fn gemm_config<T>(
         transb,
     };
 
-    let stride_b: usize = match lhs_stride[..lhs_stride.len() - 2] {
+    let stride_a: usize = match lhs_stride[..lhs_stride.len() - 2] {
         [s1, stride] if s1 == stride * lhs_dims[1] => stride,
         [_, stride] if lhs_dims[0] == 1 => stride,
         [stride, _] if lhs_dims[1] == 1 => stride,
         [stride] => stride,
         [] => m * k,
         _ => Err(Error::MatMulNonContiguous {
-            lhs_stride,
-            rhs_stride,
+            lhs_stride: lhs_stride.to_vec(),
+            rhs_stride: rhs_stride.to_vec(),
+            out_stride: out_stride.to_vec(),
             mnk: (m, n, k),
         })?,
     };
-    let stride_a: usize = match rhs_stride[..rhs_stride.len() - 2] {
+    let stride_b: usize = match rhs_stride[..rhs_stride.len() - 2] {
         [s1, stride] if s1 == stride * rhs_dims[1] => stride,
         [_, stride] if rhs_dims[0] == 1 => stride,
         [stride, _] if rhs_dims[1] == 1 => stride,
         [stride] => stride,
         [] => n * k,
         _ => Err(Error::MatMulNonContiguous {
-            lhs_stride,
-            rhs_stride,
+            lhs_stride: lhs_stride.to_vec(),
+            rhs_stride: rhs_stride.to_vec(),
+            out_stride: out_stride.to_vec(),
+            mnk: (m, n, k),
+        })?,
+    };
+    let stride_c: usize = match out_stride[..out_stride.len() - 2] {
+        [s1, stride] if s1 == stride * rhs_dims[1] => stride,
+        [_, stride] if rhs_dims[0] == 1 => stride,
+        [stride, _] if rhs_dims[1] == 1 => stride,
+        [stride] => stride,
+        [] => m * n,
+        _ => Err(Error::MatMulNonContiguous {
+            lhs_stride: lhs_stride.to_vec(),
+            rhs_stride: rhs_stride.to_vec(),
+            out_stride: out_stride.to_vec(),
             mnk: (m, n, k),
         })?,
     };
@@ -92,6 +110,6 @@ pub(crate) fn gemm_config<T>(
         gemm,
         stride_a: stride_a as i64,
         stride_b: stride_b as i64,
-        stride_c: (m * n) as i64,
+        stride_c: stride_c as i64,
     })
 }

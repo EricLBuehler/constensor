@@ -28,10 +28,11 @@ pub enum Error {
         context: String,
     },
 
-    #[error("matmul is only supported for contiguous tensors lstride: {lhs_stride:?} rstride: {rhs_stride:?} mnk: {mnk:?}")]
+    #[error("matmul is only supported for contiguous tensors lstride: {lhs_stride:?} rstride: {rhs_stride:?} ostride: {out_stride:?} mnk: {mnk:?}")]
     MatMulNonContiguous {
-        lhs_stride: [usize; 3],
-        rhs_stride: [usize; 3],
+        lhs_stride: Vec<usize>,
+        rhs_stride: Vec<usize>,
+        out_stride: Vec<usize>,
         mnk: (usize, usize, usize),
     },
 }

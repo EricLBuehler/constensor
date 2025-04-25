@@ -34,11 +34,14 @@ pub trait GemmDispatch {
         cublas: &cudarc::cublas::CudaBlas,
         lhs: &cudarc::driver::CudaSlice<Self>,
         rhs: &cudarc::driver::CudaSlice<Self>,
+        lhs_stride: &[usize],
+        rhs_stride: &[usize],
         b: usize,
         m: usize,
         n: usize,
         k: usize,
         out: &mut cudarc::driver::CudaSlice<Self>,
+        out_stride: &[usize],
         alpha: Self,
         beta: Self,
     ) -> crate::Result<()>
@@ -66,11 +69,14 @@ macro_rules! instantiate_gemm_cuda {
             _cublas: &cudarc::cublas::CudaBlas,
             _lhs: &cudarc::driver::CudaSlice<Self>,
             _rhs: &cudarc::driver::CudaSlice<Self>,
+            _lhs_stride: &[usize],
+            _rhs_stride: &[usize],
             _b: usize,
             _m: usize,
             _n: usize,
             _k: usize,
             _out: &mut cudarc::driver::CudaSlice<Self>,
+            _out_stride: &[usize],
             _alpha: Self,
             _beta: Self,
         ) -> crate::Result<()>
@@ -87,18 +93,28 @@ macro_rules! instantiate_gemm_cuda {
             cublas: &cudarc::cublas::CudaBlas,
             lhs: &cudarc::driver::CudaSlice<$rt>,
             rhs: &cudarc::driver::CudaSlice<$rt>,
+            lhs_stride: &[usize],
+            rhs_stride: &[usize],
             b: usize,
             m: usize,
             n: usize,
             k: usize,
             out: &mut cudarc::driver::CudaSlice<$rt>,
+            out_stride: &[usize],
             alpha: $rt,
             beta: $rt,
         ) -> crate::Result<()> {
             use crate::cuda_backend::error::WrapErr;
             use cudarc::cublas::Gemm;
 
-            let gemm_cfg = crate::cuda_backend::util::gemm_config(alpha, beta, (b, m, n, k))?;
+            let gemm_cfg = crate::cuda_backend::util::gemm_config(
+                alpha,
+                beta,
+                (b, m, n, k),
+                lhs_stride,
+                rhs_stride,
+                out_stride,
+            )?;
 
             unsafe {
                 cublas

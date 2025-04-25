@@ -25,6 +25,7 @@ use crate::{
     cpu_storage::CpuStorage,
     device::Dev,
     storage::{BackendDevice, BackendStorage, Storage},
+    tensor::contiguous_strides,
     CompiledGraph, DType, GraphNode, Op, Result, Shape,
 };
 
@@ -211,6 +212,9 @@ pub enum CudaCompiledKernel<T: DType> {
         r_id: usize,
         /// Optional output tensor ID for axpby semantics
         o_id: Option<usize>,
+        l_stride: Vec<usize>,
+        r_stride: Vec<usize>,
+        o_stride: Option<Vec<usize>>,
         b: usize,
         m: usize,
         n: usize,
@@ -541,8 +545,12 @@ impl BackendDevice for CudaDevice {
                 } => {
                     let l_shape = &graph[l_id.get()].shape;
                     let r_shape = &graph[r_id.get()].shape;
+                    let l_stride = &graph[l_id.get()].strides;
+                    let r_stride = &graph[r_id.get()].strides;
                     assert_eq!(l_shape.len(), 3);
                     assert_eq!(r_shape.len(), 3);
+                    assert_eq!(l_stride.len(), 3);
+                    assert_eq!(r_stride.len(), 3);
                     let (b, m, _k) = (l_shape[0], l_shape[1], l_shape[2]);
                     let n = r_shape[2];
 
@@ -554,6 +562,9 @@ impl BackendDevice for CudaDevice {
                         l_id: l_id.get(),
                         r_id: r_id.get(),
                         o_id: o_id.as_ref().map(|id| id.get()),
+                        l_stride: l_stride.clone(),
+                        r_stride: r_stride.clone(),
+                        o_stride: o_id.as_ref().map(|id| graph[id.get()].strides.clone()),
                         b,
                         m,
                         n,
@@ -666,6 +677,9 @@ impl BackendDevice for CudaDevice {
                     l_id,
                     r_id,
                     o_id,
+                    l_stride,
+                    r_stride,
+                    o_stride,
                     b,
                     m,
                     n,
@@ -684,7 +698,7 @@ impl BackendDevice for CudaDevice {
                     lhs.event.synchronize().w()?;
                     rhs.event.synchronize().w()?;
 
-                    let elems = m * n;
+                    let elems = b * m * n;
                     // prepare output buffer, copy initial if provided
                     let mut out = unsafe { stream.alloc::<T>(elems) }.w()?;
                     if let Some(o_idx) = o_id {
@@ -694,9 +708,14 @@ impl BackendDevice for CudaDevice {
                         self.stream().memcpy_dtod(&init.slice, &mut out).w()?;
                     }
 
+                    let o_stride = o_stride
+                        .clone()
+                        .unwrap_or(contiguous_strides(&[*b, *m, *n]));
+
                     // Launch GEMM on the pooled stream
                     T::launch_gemm_cuda(
-                        cublas, &lhs.slice, &rhs.slice, *b, *m, *n, *k, &mut out, *beta, *alpha,
+                        cublas, &lhs.slice, &rhs.slice, l_stride, r_stride, *b, *m, *n, *k,
+                        &mut out, &o_stride, *beta, *alpha,
                     )?;
 
                     // Record completion event for the MatMul result
