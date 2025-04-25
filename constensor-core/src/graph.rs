@@ -315,7 +315,12 @@ impl<T: DType> Graph<T> {
                                 } => {
                                     vec![a_id, b_id, c_id]
                                 }
-                                Op::MatMul { l_id, r_id, .. } => vec![l_id, r_id],
+                                Op::MatMul {
+                                    l_id, r_id, o_id, ..
+                                } => o_id
+                                    .as_ref()
+                                    .map(|o| vec![l_id, r_id, o])
+                                    .unwrap_or(vec![l_id, r_id]),
                                 Op::NoOp => vec![],
                             };
 
@@ -365,9 +370,14 @@ impl<T: DType> Graph<T> {
                     *usage.entry(b_id.clone()).or_default() += 1;
                     *usage.entry(c_id.clone()).or_default() += 1;
                 }
-                Op::MatMul { l_id, r_id, .. } => {
+                Op::MatMul {
+                    l_id, r_id, o_id, ..
+                } => {
                     *usage.entry(l_id.clone()).or_default() += 1;
                     *usage.entry(r_id.clone()).or_default() += 1;
+                    if let Some(o_id) = o_id {
+                        *usage.entry(o_id.clone()).or_default() += 1;
+                    }
                 }
                 // No input usage for these ops
                 Op::NoOp | Op::Fill { .. } | Op::Arange { .. } | Op::Rand | Op::Randn { .. } => {}
@@ -588,6 +598,7 @@ impl<T: DType> Graph<T> {
     /// - Inplace matrix-multiplication when safe
     /// - Dead code removal
     pub fn optimize(&mut self) {
+        return;
         // Constant folding first
         self.optimize_const();
         // Fuse mul-add into FMA

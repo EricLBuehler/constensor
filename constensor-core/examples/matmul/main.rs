@@ -7,13 +7,13 @@ fn bench<T: DType, const B: usize, const M: usize, const K: usize, const N: usiz
     beta: T,
 ) {
     // Number of times to run the matmul for averaging
-    let iterations = 1000;
+    let iterations = 1;
     let mut total = std::time::Duration::new(0, 0);
 
     let mut graph = Graph::empty();
-    let a = GraphTensor::<R3<B, M, K>, T, Cpu>::ones(&mut graph);
-    let b = GraphTensor::<R3<B, K, N>, T, Cpu>::ones(&mut graph);
-    let o = GraphTensor::<R3<B, M, N>, T, Cpu>::ones(&mut graph);
+    let a = GraphTensor::<R3<B, M, K>, T, Cpu>::fill(&mut graph, T::from_f64(1.));
+    let b = GraphTensor::<R3<B, N, K>, T, Cpu>::fill(&mut graph, T::from_f64(2.)).t();
+    let o = GraphTensor::<R3<B, M, N>, T, Cpu>::fill(&mut graph, T::from_f64(3.));
     let _c = a.matmul_axpby(b, o, alpha, beta);
 
     graph.optimize();
@@ -22,7 +22,8 @@ fn bench<T: DType, const B: usize, const M: usize, const K: usize, const N: usiz
     for _ in 0..iterations {
         let start = Instant::now();
 
-        let _tensor = std::hint::black_box(compiled.run().unwrap());
+        let tensor = std::hint::black_box(compiled.run().unwrap());
+        dbg!(tensor.data().unwrap());
 
         total += start.elapsed();
     }
@@ -33,10 +34,10 @@ fn bench<T: DType, const B: usize, const M: usize, const K: usize, const N: usiz
 
 fn main() {
     const B: usize = 1;
-    const M: usize = 128;
-    const N: usize = 128;
-    const K: usize = 128;
+    const M: usize = 2;
+    const N: usize = 2;
+    const K: usize = 2;
 
     bench::<f32, B, M, K, N>("f32", 1.0, 1.0);
-    bench::<i32, B, M, K, N>("i32", 1, 1);
+    // bench::<i32, B, M, K, N>("i32", 1, 1);
 }

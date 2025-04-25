@@ -209,7 +209,7 @@ impl<T: DType, const A: usize, const B: usize, const C: usize, D: Dev>
     GraphTensor<R3<A, B, C>, T, D>
 {
     /// Return a view of this tensor with last two reversed axes (A x B x C -> A x C x B).
-    pub fn t(&self) -> GraphTensor<R3<C, B, A>, T, D> {
+    pub fn t(&self) -> GraphTensor<R3<A, C, B>, T, D> {
         // swap strides for last two dimensions
         let mut new_strides = self.strides.clone();
         new_strides.swap(1, 2);

@@ -13,12 +13,15 @@ pub trait GemmDispatch {
     // Matrix multiplication: (B x M x K) * (B x K x N) = (B x M x N)
     fn launch_gemm(
         lhs: &[Self],
+        lhs_stride: &[usize],
         rhs: &[Self],
+        rhs_stride: &[usize],
         b: usize,
         m: usize,
         n: usize,
         k: usize,
         out: &mut Vec<Self>,
+        out_stride: &[usize],
         alpha: Self,
         beta: Self,
     ) where
@@ -151,12 +154,15 @@ macro_rules! instantiate_gemm {
         impl GemmDispatch for $rt {
             fn launch_gemm(
                 lhs: &[Self],
+                lhs_stride: &[usize],
                 rhs: &[Self],
+                rhs_stride: &[usize],
                 b: usize,
                 m: usize,
                 n: usize,
                 k: usize,
                 out: &mut Vec<Self>,
+                out_stride: &[usize],
                 alpha: Self,
                 beta: Self,
             ) where
@@ -169,15 +175,22 @@ macro_rules! instantiate_gemm {
                     Parallelism::None
                 };
 
+                debug_assert_eq!(lhs.len(), b * m * k);
+                debug_assert_eq!(lhs_stride.len(), 3);
+                debug_assert_eq!(rhs.len(), b * k * n);
+                debug_assert_eq!(rhs_stride.len(), 3);
+                debug_assert_eq!(out.len(), b * m * n);
+                debug_assert_eq!(out_stride.len(), 3);
+
                 // cs = stride[-1], rs = stride[-2]
-                let dst_cs = 1;
-                let dst_rs = n;
+                let dst_cs = out_stride[2];
+                let dst_rs = out_stride[1];
 
-                let lhs_cs = 1;
-                let lhs_rs = k;
+                let lhs_cs = lhs_stride[2];
+                let lhs_rs = lhs_stride[1];
 
-                let rhs_cs = 1;
-                let rhs_rs = n;
+                let rhs_cs = rhs_stride[2];
+                let rhs_rs = rhs_stride[1];
 
                 let read_dst = alpha != $zero;
 
@@ -220,12 +233,15 @@ macro_rules! instantiate_gemm {
         impl GemmDispatch for $rt {
             fn launch_gemm(
                 lhs: &[Self],
+                lhs_stride: &[usize],
                 rhs: &[Self],
+                rhs_stride: &[usize],
                 b: usize,
                 m: usize,
                 n: usize,
                 k: usize,
                 out: &mut Vec<Self>,
+                out_stride: &[usize],
                 alpha: Self,
                 beta: Self,
             ) where
@@ -238,8 +254,11 @@ macro_rules! instantiate_gemm {
                 let rem = n % BLOCK_SIZE;
 
                 debug_assert_eq!(lhs.len(), b * m * k);
+                debug_assert_eq!(lhs_stride.len(), 3);
                 debug_assert_eq!(rhs.len(), b * k * n);
+                debug_assert_eq!(rhs_stride.len(), 3);
                 debug_assert_eq!(out.len(), b * m * n);
+                debug_assert_eq!(out_stride.len(), 3);
 
                 for batch in 0..b {
                     // Compute base pointers once per batch

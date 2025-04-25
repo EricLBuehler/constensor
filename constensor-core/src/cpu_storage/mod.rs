@@ -9,7 +9,7 @@ use rayon::iter::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelI
 
 use crate::device::Dev;
 use crate::storage::Storage;
-use crate::tensor::is_contiguous_strides;
+use crate::tensor::contiguous_strides;
 use crate::Shape;
 use crate::{
     storage::{BackendDevice, BackendStorage},
@@ -63,15 +63,21 @@ impl BackendDevice for CpuDevice {
                     dep_graph.add_edge(b_id.get(), idx, ());
                     dep_graph.add_edge(c_id.get(), idx, ());
                 }
-                Op::MatMul { l_id, r_id, .. } => {
+                Op::MatMul {
+                    l_id, r_id, o_id, ..
+                } => {
                     dep_graph.add_edge(l_id.get(), idx, ());
                     dep_graph.add_edge(r_id.get(), idx, ());
+                    if let Some(o_id) = o_id {
+                        dep_graph.add_edge(o_id.get(), idx, ());
+                    }
                 }
                 // NoOp, Fill/Arange, Rand/Randn don’t create incoming edges
                 Op::NoOp | Op::Fill { .. } | Op::Arange { .. } | Op::Rand | Op::Randn { .. } => {}
             }
         }
 
+        dbg!(&dep_graph);
         // Compute topological order
         let order = toposort(&dep_graph, None).expect("Cycle detected in graph!");
 
@@ -103,6 +109,8 @@ impl BackendDevice for CpuDevice {
             // Prepare storage for intermediate results
             let mut results: Vec<Option<PooledBuffer<T>>> = Vec::with_capacity(graph.len());
             results.resize_with(graph.len(), || None);
+            let mut results_strides: Vec<Option<Vec<usize>>> = Vec::with_capacity(graph.len());
+            results_strides.resize_with(graph.len(), || None);
 
             let mut rng = rng();
 
@@ -112,9 +120,6 @@ impl BackendDevice for CpuDevice {
 
                 let out_shape = &op.shape;
                 let out_elem_count: usize = out_shape.iter().product();
-
-                let strides = &op.strides;
-                let is_contiguous = is_contiguous_strides(strides, out_shape);
 
                 let computed = match &op.op {
                     Op::BinaryOp {
@@ -228,27 +233,57 @@ impl BackendDevice for CpuDevice {
                         let m = shape[1];
                         let n = shape[2];
 
-                        let mut out = if let Some(o_id) = o_id {
+                        let (mut out, out_stride) = if let Some(o_id) = o_id {
                             if o_id.is_inplace() {
-                                results[o_id.get()].take().unwrap()
+                                let out_strides = results_strides[o_id.get()].as_ref().unwrap();
+                                (results[o_id.get()].take().unwrap(), out_strides.clone())
                             } else {
                                 let o_buf = results[o_id.get()].as_ref().unwrap();
-                                PooledBuffer::new((*o_buf).clone(), pool.clone())
+                                let out_strides = results_strides[o_id.get()].as_ref().unwrap();
+                                (
+                                    PooledBuffer::new((*o_buf).clone(), pool.clone()),
+                                    out_strides.clone(),
+                                )
                             }
                         } else {
-                            PooledBuffer::new(pool.borrow_mut().get_buffer(m * n), pool.clone())
+                            (
+                                PooledBuffer::new(
+                                    pool.borrow_mut().get_buffer(b * m * n),
+                                    pool.clone(),
+                                ),
+                                contiguous_strides(&[b, m, n]),
+                            )
                         };
 
                         let a_buf = results[l_id.get()].as_ref().unwrap();
                         let b_buf = results[r_id.get()].as_ref().unwrap();
 
-                        T::launch_gemm(a_buf, b_buf, b, m, n, *k, &mut out, *alpha, *beta);
+                        let a_strides = results_strides[l_id.get()].as_ref().unwrap();
+                        let b_strides = results_strides[r_id.get()].as_ref().unwrap();
+
+                        T::launch_gemm(
+                            a_buf,
+                            a_strides,
+                            b_buf,
+                            b_strides,
+                            b,
+                            m,
+                            n,
+                            *k,
+                            &mut out,
+                            &out_stride,
+                            *alpha,
+                            *beta,
+                        );
 
                         out
                     }
                     Op::NoOp => unreachable!("NoOp should not be evaluated."),
                 };
+
                 results[idx] = Some(computed);
+                dbg!(&op.strides);
+                results_strides[idx] = Some(op.strides.clone());
             }
 
             // Extract final result
