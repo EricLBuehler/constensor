@@ -13,7 +13,7 @@ use std::sync::{
 };
 use std::{
     borrow::Cow,
-    collections::{HashMap, HashSet, VecDeque},
+    collections::{HashMap, VecDeque},
     fs,
     hash::{DefaultHasher, Hash, Hasher},
     marker::PhantomData,
@@ -518,20 +518,6 @@ impl BackendDevice for CudaDevice {
         let mut kernels = Vec::<CudaCompiledKernel<T>>::new();
         let mut matmuls = Vec::<CudaCompiledKernel<T>>::new();
         let mut splits: Vec<(Vec<usize>, Vec<usize>)> = Vec::new();
-        // Collect all matmul input node indices
-        let mut matmul_inputs = HashSet::new();
-        for &idx in &order {
-            if let Op::MatMul {
-                l_id, r_id, o_id, ..
-            } = &graph[idx].op
-            {
-                matmul_inputs.insert(l_id.get());
-                matmul_inputs.insert(r_id.get());
-                if let Some(o_id) = o_id {
-                    matmul_inputs.insert(o_id.get());
-                }
-            }
-        }
 
         for &idx in &order {
             match &graph[idx].op {
@@ -606,11 +592,32 @@ impl BackendDevice for CudaDevice {
                 }
                 _ => {
                     let shape_key = graph[idx].shape.clone();
+                    // Group only when same shape and this op depends on the last split node
                     let should_group = if let Some((last_group, _)) = splits.last_mut() {
                         let last_idx = *last_group.last().unwrap();
-                        let last_shape_key = graph[last_idx].shape.clone();
-                        // Force all matmul inputs to have their own
-                        last_shape_key == shape_key && !matmul_inputs.contains(&idx)
+                        if graph[last_idx].shape == shape_key {
+                            match &graph[idx].op {
+                                Op::BinaryOp { l_id, r_id, .. } => {
+                                    l_id.get() == last_idx || r_id.get() == last_idx
+                                }
+                                Op::UnaryOp { v_id, .. } => v_id.get() == last_idx,
+                                Op::FusedMulAdd { a_id, b_id, c_id } => {
+                                    a_id.get() == last_idx
+                                        || b_id.get() == last_idx
+                                        || c_id.get() == last_idx
+                                }
+                                Op::Permute { v_id } => v_id.get() == last_idx,
+                                // Init ops always start new group
+                                Op::NoOp
+                                | Op::Fill { .. }
+                                | Op::Arange { .. }
+                                | Op::Rand
+                                | Op::Randn { .. }
+                                | Op::MatMul { .. } => false,
+                            }
+                        } else {
+                            false
+                        }
                     } else {
                         false
                     };
