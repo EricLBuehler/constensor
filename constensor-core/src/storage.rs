@@ -18,10 +18,19 @@ impl<T: DType> Storage<T> {
             Self::Cuda(cuda) => cuda.to_cpu_storage(),
         }
     }
+
+    pub(crate) fn cast<U: DType>(&self) -> Result<Storage<U>> {
+        match self {
+            Self::Cpu(cpu) => cpu.cast::<U>(),
+            #[cfg(feature = "cuda")]
+            Self::Cuda(cuda) => cuda.cast::<U>(),
+        }
+    }
 }
 
 pub trait BackendStorage<T: DType> {
     fn to_cpu_storage(&self) -> Result<Cow<CpuStorage<T>>>;
+    fn cast<U: DType>(&self) -> Result<Storage<U>>;
 }
 
 pub trait BackendDevice {

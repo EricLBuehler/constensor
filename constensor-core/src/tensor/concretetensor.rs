@@ -85,6 +85,15 @@ tensor_api!(Cpu);
 #[cfg(feature = "cuda")]
 tensor_api!(Cuda<0>);
 
+impl<S: Shape, T: DType, D: Dev> Tensor<S, T, D> {
+    /// Cast this tensor to a different dtype `U` on the CPU.
+    pub fn cast<U: DType>(&self) -> Result<Tensor<S, U, D>> {
+        // retrieve data from storage as owned Vec<T>
+        let storage = self.storage.cast::<U>()?;
+        Ok(from_storage::<S, U, D>(Arc::new(storage)))
+    }
+}
+
 /*macro_rules! binary_op {
     ($trait:ident, $fn:ident) => {
         impl<S: Shape, D: DType> $trait for Tensor<S, D> {

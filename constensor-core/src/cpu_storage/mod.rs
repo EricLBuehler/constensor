@@ -8,6 +8,7 @@ use pool::{BufferPool, PooledBuffer};
 use rayon::iter::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator};
 
 use crate::device::Dev;
+use crate::storage::Storage;
 use crate::Shape;
 use crate::{
     storage::{BackendDevice, BackendStorage},
@@ -26,8 +27,11 @@ pub struct CpuStorage<T: DType>(pub(crate) Vec<T>);
 
 impl<T: DType> BackendStorage<T> for CpuStorage<T> {
     fn to_cpu_storage(&self) -> Result<Cow<CpuStorage<T>>> {
-        // Note: copying all data here.
-        Ok(Cow::Owned(self.clone()))
+        Ok(Cow::Borrowed(&self))
+    }
+    fn cast<U: DType>(&self) -> Result<Storage<U>> {
+        let new = self.0.iter().map(|x| U::from_f64(x.to_f64()));
+        Ok(Storage::Cpu(CpuStorage(new.collect())))
     }
 }
 
