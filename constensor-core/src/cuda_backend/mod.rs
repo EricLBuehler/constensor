@@ -1,6 +1,5 @@
 use cudarc::{
     cublas::CudaBlas,
-    curand::CudaRng,
     driver::{
         CudaEvent, CudaFunction, CudaModule, CudaSlice, CudaStream, LaunchConfig, PushKernelArg,
     },
@@ -10,7 +9,7 @@ use error::WrapErr;
 use petgraph::{algo::toposort, prelude::DiGraphMap};
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
-    Arc, RwLock,
+    Arc, Mutex, RwLock,
 };
 use std::{
     borrow::Cow,
@@ -31,6 +30,9 @@ use crate::{
 
 pub(crate) mod error;
 pub(crate) mod util;
+
+pub struct CudaRng(cudarc::curand::CudaRng);
+unsafe impl Send for CudaRng {}
 
 #[derive(Clone)]
 pub struct CudaDevice {
@@ -127,7 +129,7 @@ pub enum CudaCompiledKernel<T: DType> {
         stream: Arc<CudaStream>,
     },
     Rand {
-        rng: Arc<CudaRng>,
+        rng: Arc<Mutex<CudaRng>>,
         stream: Arc<CudaStream>,
         elem_count: usize,
         order: usize,
@@ -135,7 +137,7 @@ pub enum CudaCompiledKernel<T: DType> {
     Randn {
         mean: T,
         std: T,
-        rng: Arc<CudaRng>,
+        rng: Arc<Mutex<CudaRng>>,
         stream: Arc<CudaStream>,
         elem_count: usize,
         order: usize,
@@ -207,8 +209,8 @@ fn handle_node<T: DType>(
             format!("( static_cast<T>(fma(static_cast<double>({a_name}), static_cast<double>({b_name}), static_cast<double>({c_name}))))")
         }
         Op::NoOp => unreachable!("no-op ops should never be reached."),
-        Op::MatMul { .. } | Op::Rand { .. } | Op::Randn { .. } => {
-            unreachable!("matmul op should have its own split!")
+        Op::MatMul { .. } | Op::Rand | Op::Randn { .. } => {
+            unreachable!("op should have its own split!")
         }
     }
 }
@@ -386,11 +388,7 @@ impl BackendDevice for CudaDevice {
                     dep_graph.add_edge(r_id.get(), idx, ());
                 }
                 // These don’t create incoming edges
-                Op::NoOp
-                | Op::Fill { .. }
-                | Op::Rand { .. }
-                | Op::Randn { .. }
-                | Op::Arange { .. } => {}
+                Op::NoOp | Op::Fill { .. } | Op::Rand | Op::Randn { .. } | Op::Arange { .. } => {}
             }
         }
 
@@ -454,7 +452,9 @@ impl BackendDevice for CudaDevice {
                 }
                 Op::Rand => {
                     let stream = self.select_stream();
-                    let curand = Arc::new(CudaRng::new(0, stream.clone()).w()?);
+                    let curand = Arc::new(Mutex::new(CudaRng(
+                        cudarc::curand::CudaRng::new(0, stream.clone()).w()?,
+                    )));
 
                     matmuls.push(CudaCompiledKernel::Rand {
                         rng: curand,
@@ -465,7 +465,9 @@ impl BackendDevice for CudaDevice {
                 }
                 Op::Randn { mean, std } => {
                     let stream = self.select_stream();
-                    let curand = Arc::new(CudaRng::new(0, stream.clone()).w()?);
+                    let curand = Arc::new(Mutex::new(CudaRng(
+                        cudarc::curand::CudaRng::new(0, stream.clone()).w()?,
+                    )));
 
                     matmuls.push(CudaCompiledKernel::Randn {
                         mean: *mean,
@@ -600,7 +602,7 @@ impl BackendDevice for CudaDevice {
                     order,
                 } => {
                     let mut slice = unsafe { stream.alloc::<T>(*elem_count).w()? };
-                    T::cuda_fill_with_uniform(&rng, &mut slice)?;
+                    T::cuda_fill_with_uniform(&rng.lock().unwrap().0, &mut slice)?;
 
                     // Record completion event for the MatMul result
                     let event = self.context.new_event(None).w()?;
@@ -622,7 +624,7 @@ impl BackendDevice for CudaDevice {
                     order,
                 } => {
                     let mut slice = unsafe { stream.alloc::<T>(*elem_count).w()? };
-                    T::cuda_fill_with_normal(&rng, &mut slice, *mean, *std)?;
+                    T::cuda_fill_with_normal(&rng.lock().unwrap().0, &mut slice, *mean, *std)?;
 
                     // Record completion event for the MatMul result
                     let event = self.context.new_event(None).w()?;
