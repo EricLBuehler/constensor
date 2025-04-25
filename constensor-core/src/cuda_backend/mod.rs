@@ -213,6 +213,7 @@ fn compile_ptx(template_kernel: String) -> Result<Ptx> {
                 .join("include")
                 .display()
                 .to_string()],
+            arch: Some("sm_90"),
             ..Default::default()
         },
     )
@@ -279,22 +280,8 @@ impl CudaDevice {
             T::C_NAME,
         );
 
-        let ptx = if let Some(home) = dirs::home_dir() {
-            let path = format!(
-                "{}/.cache/constensor/ptx/{function_name}.ptx",
-                home.display()
-            );
-            if Path::new(&path).exists() {
-                match fs::read_to_string(path) {
-                    Ok(ptx) => Ptx::from_src(ptx),
-                    Err(_) => compile_ptx(template_kernel)?,
-                }
-            } else {
-                compile_ptx(template_kernel)?
-            }
-        } else {
-            compile_ptx(template_kernel)?
-        };
+        // Always recompile PTX to avoid using stale cached files
+        let ptx = compile_ptx(template_kernel.clone())?;
 
         let ptx_str = ptx.to_src();
         if let Some(home) = dirs::home_dir() {
@@ -366,9 +353,15 @@ impl BackendDevice for CudaDevice {
         // Collect all matmul input node indices
         let mut matmul_inputs = HashSet::new();
         for &idx in &order {
-            if let Op::MatMul { l_id, r_id, .. } = &graph[idx].op {
+            if let Op::MatMul {
+                l_id, r_id, o_id, ..
+            } = &graph[idx].op
+            {
                 matmul_inputs.insert(l_id.get());
                 matmul_inputs.insert(r_id.get());
+                if let Some(o_id) = o_id {
+                    matmul_inputs.insert(o_id.get());
+                }
             }
         }
 
@@ -406,7 +399,7 @@ impl BackendDevice for CudaDevice {
                     let should_group = if let Some((last_group, _)) = splits.last_mut() {
                         let last_idx = *last_group.last().unwrap();
                         let last_shape_key = graph[last_idx].shape.clone();
-                        last_shape_key == shape_key && !matmul_inputs.contains(&idx)
+                        last_shape_key == shape_key
                     } else {
                         false
                     };

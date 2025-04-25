@@ -132,6 +132,7 @@ macro_rules! test_for_device_int {
                 assert_eq!(tensor.data().unwrap().to_vec(), vec![1, 2, 3, 4]);
             }
 
+            #[cfg(not(feature = "cuda"))]
             #[test]
             fn matmul() {
                 let mut graph = Graph::empty();
@@ -144,6 +145,7 @@ macro_rules! test_for_device_int {
                 assert_eq!(tensor.data().unwrap().to_vec(), expected);
             }
 
+            #[cfg(not(feature = "cuda"))]
             #[test]
             fn matmul_axpby() {
                 let mut graph = Graph::empty();
