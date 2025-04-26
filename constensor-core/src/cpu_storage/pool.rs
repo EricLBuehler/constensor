@@ -1,5 +1,5 @@
 use std::mem;
-use std::{cell::RefCell, rc::Rc};
+use std::sync::{Arc, Mutex};
 
 use crate::DType;
 
@@ -30,8 +30,8 @@ pub struct BufferPool<T> {
     pub metrics: PoolMetrics,
 }
 
-/// Shared reference to a BufferPool for automatic recycling.
-pub type SharedPool<T> = Rc<RefCell<BufferPool<T>>>;
+/// Shared, thread-safe reference to a BufferPool for automatic recycling.
+pub type SharedPool<T> = Arc<Mutex<BufferPool<T>>>;
 
 #[derive(Debug)]
 /// Wrapper around Vec<T> that returns its buffer to the pool on drop.
@@ -74,7 +74,9 @@ impl<T: DType> Drop for PooledBuffer<T> {
     fn drop(&mut self) {
         if let Some(pool) = self.pool.take() {
             let buf = std::mem::take(&mut self.buf);
-            pool.borrow_mut().recycle_buffer(buf);
+            // Return the buffer to the pool
+            let mut pool_guard = pool.lock().unwrap();
+            pool_guard.recycle_buffer(buf);
         }
     }
 }

@@ -1,5 +1,5 @@
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::{
-    cell::Cell,
     collections::HashMap,
     env,
     fmt::Display,
@@ -8,7 +8,6 @@ use std::{
     marker::PhantomData,
     path::Path,
     process::Command,
-    rc::Rc,
     sync::{Arc, RwLock, RwLockReadGuard},
 };
 
@@ -779,11 +778,11 @@ pub enum Op<T: DType> {
     NoOp,
 }
 
-#[derive(Clone, PartialEq, Debug, Eq)]
+#[derive(Clone, Debug)]
 /// Graph tensor IDs can be cloned.
 pub enum GraphTensorId {
-    OutOfPlace(Rc<Cell<usize>>),
-    InPlace(Rc<Cell<usize>>),
+    OutOfPlace(Arc<AtomicUsize>),
+    InPlace(Arc<AtomicUsize>),
 }
 
 impl Hash for GraphTensorId {
@@ -794,35 +793,39 @@ impl Hash for GraphTensorId {
 
 impl GraphTensorId {
     pub fn out_of_place(value: usize) -> Self {
-        Self::OutOfPlace(Rc::new(Cell::new(value)))
+        Self::OutOfPlace(Arc::new(AtomicUsize::new(value)))
     }
 
     pub fn inplace(value: usize) -> Self {
-        Self::InPlace(Rc::new(Cell::new(value)))
+        Self::InPlace(Arc::new(AtomicUsize::new(value)))
     }
 
     pub fn to_inplace(&self) -> Self {
         match self {
-            Self::OutOfPlace(x) | Self::InPlace(x) => Self::inplace(x.get()),
+            Self::OutOfPlace(x) | Self::InPlace(x) => Self::inplace(x.load(Ordering::SeqCst)),
         }
     }
 
     pub fn to_inplace_if(&self, predicate: bool) -> Self {
         match self {
-            Self::OutOfPlace(x) | Self::InPlace(x) if predicate => Self::inplace(x.get()),
+            Self::OutOfPlace(x) | Self::InPlace(x) if predicate => {
+                Self::inplace(x.load(Ordering::SeqCst))
+            }
             _ => self.clone(),
         }
     }
 
     pub fn get(&self) -> usize {
         match self {
-            GraphTensorId::InPlace(x) | GraphTensorId::OutOfPlace(x) => x.get(),
+            GraphTensorId::InPlace(x) | GraphTensorId::OutOfPlace(x) => x.load(Ordering::SeqCst),
         }
     }
 
     pub fn set(&self, value: usize) {
         match self {
-            GraphTensorId::InPlace(x) | GraphTensorId::OutOfPlace(x) => x.set(value),
+            GraphTensorId::InPlace(x) | GraphTensorId::OutOfPlace(x) => {
+                x.store(value, Ordering::SeqCst);
+            }
         }
     }
 
@@ -830,3 +833,12 @@ impl GraphTensorId {
         matches!(self, Self::InPlace(_))
     }
 }
+
+// Manually implement equality by comparing the numeric IDs and in‐place flag:
+impl PartialEq for GraphTensorId {
+    fn eq(&self, other: &Self) -> bool {
+        self.get() == other.get() && self.is_inplace() == other.is_inplace()
+    }
+}
+
+impl Eq for GraphTensorId {}
