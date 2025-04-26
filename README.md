@@ -16,6 +16,11 @@ Experimental machine learning framework featuring a graph-based JIT compiler.
 - Multi-device support (CPU, optional CUDA)
 - Graph visualization (requires Graphviz)
 - Zero-cost abstractions with idiomatic Rust API
+- Broad GPU support:
+  - CUDA (NVIDIA): `--features cuda`
+  - HIP (AMD): `--features hip`
+  - Metal (Apple): `--features metal`
+  - WGPU (recommended for [all others](https://github.com/gfx-rs/wgpu?tab=readme-ov-file#supported-platforms)): `--features wgpu`
 
 ## Installation
 

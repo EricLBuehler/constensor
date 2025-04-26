@@ -20,11 +20,14 @@ gemm.workspace = true
 num_cpus.workspace = true
 rand.workspace = true
 rand_distr.workspace = true
+cubecl = { workspace = true, features = ["compilation-cache", "wgpu"] }
 
 [features]
 default = []
 all = ["cuda", "half", "bfloat"]
-cuda = ["cudarc"]
+cuda = ["cudarc", "cubecl/cuda"]
+hip = ["cubecl/hip"]
+metal = ["cubecl/wgpu-msl"]
 half = ["dep:half"]
 bfloat = ["dep:half"]
 slow_integral_fma_cuda = []
