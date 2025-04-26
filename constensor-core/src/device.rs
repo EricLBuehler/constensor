@@ -1,7 +1,7 @@
 #[cfg(feature = "cuda")]
 use crate::cuda_backend::CudaDevice;
 use crate::{
-    cpu_storage::CpuDevice,
+    cpu_backend::CpuDevice,
     storage::{BackendDevice, Storage},
     CompiledGraph, DType, GraphNode, Result, Shape,
 };

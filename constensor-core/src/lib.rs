@@ -43,9 +43,8 @@
 //! assert_eq!(tensor.data().unwrap().to_vec(), vec![vec![9.0; 4]; 3],);
 //! ```
 
-mod cpu_storage;
-#[cfg(feature = "cuda")]
-mod cuda_backend;
+mod backends;
+use backends::*;
 mod device;
 mod dtype;
 mod error;
