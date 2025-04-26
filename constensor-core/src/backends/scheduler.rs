@@ -1,6 +1,5 @@
 use petgraph::algo::toposort;
 use petgraph::graphmap::DiGraphMap;
-use std::marker::PhantomData;
 
 use crate::{DType, GraphNode, Op};
 
