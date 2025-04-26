@@ -15,6 +15,7 @@ use gemm::GemmDispatch;
 use rand::RandDispatch;
 use simd_ops::SimdSupported;
 
+mod cubecl;
 mod gemm;
 mod rand;
 mod simd_ops;

@@ -664,6 +664,12 @@ pub enum CompiledGraph<S: Shape, T: DType, D: Dev> {
         graph: Vec<GraphNode<T>>,
         ghost: PhantomData<(S, T, D)>,
     },
+    /// Compiled graph for WGPU backend.
+    Wgpu {
+        order: Vec<usize>,
+        graph: Vec<GraphNode<T>>,
+        ghost: PhantomData<(S, T, D)>,
+    },
     #[cfg(feature = "cuda")]
     Cuda {
         kernels: Vec<crate::cuda_backend::CudaCompiledKernel<T>>,
