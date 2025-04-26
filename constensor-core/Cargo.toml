@@ -31,13 +31,8 @@ half = ["dep:half"]
 bfloat = ["dep:half"]
 slow_integral_fma_cuda = []
 
-[[example]]
-name = "hello_world"
-required-features = []
-  
 [dev-dependencies]
 criterion = "0.5"
-candle-core = "0.8"
 
 [[bench]]
 name = "cpu_graph"

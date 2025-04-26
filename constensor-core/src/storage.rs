@@ -2,18 +2,23 @@ use std::borrow::Cow;
 
 #[cfg(feature = "cuda")]
 use crate::cuda_backend::CudaStorage;
-use crate::{cpu_backend::CpuStorage, device::Dev, CompiledGraph, DType, GraphNode, Result, Shape};
+use crate::{
+    backends::wgpu_backend::WgpuStorage, cpu_backend::CpuStorage, device::Dev, CompiledGraph,
+    DType, GraphNode, Result, Shape,
+};
 
 pub enum Storage<T: DType> {
     #[cfg(feature = "cuda")]
     Cuda(CudaStorage<T>),
     Cpu(CpuStorage<T>),
+    Wgpu(WgpuStorage<T>),
 }
 
 impl<T: DType> Storage<T> {
     pub(crate) fn to_cpu_storage(&self) -> Result<Cow<CpuStorage<T>>> {
         match self {
             Self::Cpu(cpu) => cpu.to_cpu_storage(),
+            Self::Wgpu(wgpu) => wgpu.to_cpu_storage(),
             #[cfg(feature = "cuda")]
             Self::Cuda(cuda) => cuda.to_cpu_storage(),
         }
@@ -22,6 +27,7 @@ impl<T: DType> Storage<T> {
     pub(crate) fn cast<U: DType>(&self) -> Result<Storage<U>> {
         match self {
             Self::Cpu(cpu) => cpu.cast::<U>(),
+            Self::Wgpu(wgpu) => wgpu.cast::<U>(),
             #[cfg(feature = "cuda")]
             Self::Cuda(cuda) => cuda.cast::<U>(),
         }

@@ -55,7 +55,7 @@ mod tensor;
 
 #[cfg(feature = "cuda")]
 pub use device::Cuda;
-pub use device::{BestDevice, Cpu};
+pub use device::{BestDevice, Cpu, Wgpu};
 pub use dtype::DType;
 pub use error::{Context, Error, Result};
 pub use graph::{CompiledGraph, Graph, GraphNode, Op};

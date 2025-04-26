@@ -13,6 +13,7 @@ use std::{
 
 use crate::{device::Dev, tensor::concretetensor::from_storage, DType, Result, Shape, Tensor};
 
+use cubecl::CubeType;
 use petgraph::Graph as PetGraph;
 use petgraph::{dot::Dot, graph::NodeIndex};
 
@@ -679,7 +680,7 @@ impl<S: Shape, T: DType, D: Dev> CompiledGraph<S, T, D> {
     }
 }
 
-#[derive(PartialEq, Debug, Clone, Copy)]
+#[derive(CubeType, Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum BinaryOpType {
     Add,
     Div,
