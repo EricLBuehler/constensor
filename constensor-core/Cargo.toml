@@ -32,3 +32,11 @@ slow_integral_fma_cuda = []
 [[example]]
 name = "hello_world"
 required-features = []
+  
+[dev-dependencies]
+criterion = "0.5"
+
+[[bench]]
+name = "cpu_graph"
+path = "benches/cpu_graph.rs"
+harness = false
