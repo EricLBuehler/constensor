@@ -128,7 +128,7 @@ impl<T: DType> BufferPool<T> {
                 self.pool
                     .iter()
                     .map(|b| b.capacity() * size_of::<T>())
-                    .sum()
+                    .sum::<usize>()
             );
 
             buf
@@ -161,7 +161,7 @@ impl<T: DType> BufferPool<T> {
                 self.pool
                     .iter()
                     .map(|b| b.capacity() * size_of::<T>())
-                    .sum()
+                    .sum::<usize>()
             );
 
             self.trim_excess();
@@ -195,7 +195,7 @@ impl<T: DType> BufferPool<T> {
             self.pool
                 .iter()
                 .map(|b| b.capacity() * size_of::<T>())
-                .sum()
+                .sum::<usize>()
         );
     }
 
