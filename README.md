@@ -1,50 +1,105 @@
-<h1 align="center">
-  constensor
-</h1>
+# constensor
 
-<h3 align="center">
-Experimental ML framework featuring a graph-based JIT compiler.
-</h3>
+[![Crates.io](https://img.shields.io/crates/v/constensor-core.svg)](https://crates.io/crates/constensor-core) [![docs.rs](https://docs.rs/constensor-core/badge.svg)](https://docs.rs/constensor-core) [![CI](https://github.com/EricLBuehler/constensor/actions/workflows/ci.yml/badge.svg)](https://github.com/EricLBuehler/constensor/actions) [![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](LICENSE)
 
-<p align="center"><a href="https://docs.rs/constensor-core/latest/constensor_core/"><b>Docs</b></a>
+Experimental machine learning framework featuring a graph-based JIT compiler.
 
-</p>
+## Features
 
-Constensor is an ML framework which provides the following key features:
-
-- **Compile time shape, dtype, and device checking**: Develop quickly and handle common errors
-- **Opt-in half precision support**: Run on any GPU
-- **Advanced AI compiler features:**
+- Compile-time shape, dtype, and device checking
+- Opt-in half-precision (`f16`) and bfloat16 (`bf16`) support
+- Advanced AI compiler optimizations:
   - Elementwise JIT kernel fusion
-  - Automatic inplacing
+  - Automatic inlining and in-placing
   - Constant folding
-  - Dead code removal
+  - Dead code elimination
+- Multi-device support (CPU, optional CUDA)
+- Graph visualization (requires Graphviz)
+- Zero-cost abstractions with idiomatic Rust API
 
-You can find out more with the [DeepWiki page](https://deepwiki.com/EricLBuehler/constensor)!
+## Installation
+
+Add `constensor-core` to your `Cargo.toml`:
+
+```toml
+[dependencies]
+constensor-core = "0.1.1"
+```
+
+To enable optional features (CUDA, half-precision, bfloat16):
+
+```toml
+[dependencies.constensor-core]
+version = "0.1.1"
+features = ["cuda", "half", "bfloat"]
+```
+
+Or using `cargo add`:
+
+```bash
+cargo add constensor-core
+```
+
+## Quick Start
 
 ```rust
 use constensor_core::{Cpu, Graph, GraphTensor, Tensor, R2};
 
 fn main() {
+    // Create an empty computation graph
     let mut graph: Graph<f32> = Graph::empty();
-    let x: GraphTensor<R2<3, 4>, f32, Cpu> =
-        GraphTensor::<R2<3, 4>, f32, Cpu>::fill(graph.clone(), 1.0);
-    let y: GraphTensor<R2<3, 4>, f32, Cpu> =
-        GraphTensor::<R2<3, 4>, f32, Cpu>::fill(graph.clone(), 2.0);
-    let z: GraphTensor<R2<3, 4>, f32, Cpu> = y.clone() + y * x;
 
+    // Define graph tensors
+    let x = GraphTensor::<R2<3, 4>, f32, Cpu>::fill(&mut graph, 1.0);
+    let y = GraphTensor::<R2<3, 4>, f32, Cpu>::fill(&mut graph, 2.0);
+
+    // Build computation
+    let z = y.clone() + y * x;
+
+    // Optimize the graph
     graph.optimize();
 
+    // Visualize the optimized graph (requires Graphviz)
     graph.visualize("graph.png").unwrap();
 
+    // Execute and retrieve the result
     let tensor: Tensor<R2<3, 4>, f32, Cpu> = z.to_tensor().unwrap();
-
-    assert_eq!(tensor.data().unwrap().to_vec(), vec![vec![4.0; 4]; 3],);
+    assert_eq!(tensor.data().unwrap().to_vec(), vec![vec![4.0; 4]; 3]);
 }
-
 ```
 
-## Opt-in half precision support
-Via the following feature flags:
-- `half` for f16
-- `bfloat` for bf16
+## Examples
+
+Run the provided examples:
+
+```bash
+cargo run --example hello_world --features half
+cargo run --example matmul --features cuda,bfloat
+```
+
+See more examples in [`constensor-core/examples`](constensor-core/examples).
+
+## Documentation
+
+API documentation is available on [docs.rs](https://docs.rs/constensor-core).
+
+## More Info
+
+- DeepWiki: https://deepwiki.com/EricLBuehler/constensor
+
+## Contributing
+
+Contributions are welcome! Please open issues and submit pull requests.
+
+- Run tests with all features:
+
+  ```bash
+  cargo test --workspace --features "cuda half bfloat"
+  ```
+
+- Format code: `cargo fmt --all`
+- Lint code: `cargo clippy --all-targets -- -D warnings`
+
+## License
+
+Licensed under MIT. See [LICENSE](LICENSE) for details.
