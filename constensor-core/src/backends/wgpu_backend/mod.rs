@@ -50,10 +50,7 @@ impl<X: DType> BackendStorage<X> for WgpuStorage<X> {
         let bytes = client.read_one(self.handle.clone().binding());
         let output = X::from_bytes(&bytes);
 
-        println!("Executed runtime {:?} => {output:?}", RT::name(&client));
-        // TODO: dispatch binary operation via cubecl kernel
-        // e.g., binary::<T, RT>(...)
-        todo!()
+        Ok(Cow::Owned(CpuStorage(output.to_vec())))
     }
 
     fn cast<U: DType>(&self) -> Result<Storage<U>> {
@@ -155,7 +152,7 @@ impl BackendDevice for WgpuDevice {
                         ));
 
                         let mut ops = Sequence::new();
-                        ops.push(BinaryOpType::Add);
+                        ops.push(*operator);
                         kernels::binary::launch_unchecked(
                             &client,
                             CubeCount::Static(VECTORIZATION, 1, 1),
