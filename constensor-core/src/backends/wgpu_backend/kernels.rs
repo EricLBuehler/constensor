@@ -182,14 +182,18 @@ pub(super) fn unary_float<F: Float>(
         match op {
             UnaryOpType::Neg => out[ABSOLUTE_POS] = -a[ABSOLUTE_POS],
             UnaryOpType::Sqrt => out[ABSOLUTE_POS] = F::sqrt(a[ABSOLUTE_POS]),
+            UnaryOpType::Exp => out[ABSOLUTE_POS] = F::exp(a[ABSOLUTE_POS]),
+            UnaryOpType::Exp2 => todo!(),
         }
 
         #[unroll]
         for index in 1..ops.len() {
             let op = comptime! { ops.index(index.clone()) };
             match op {
-                UnaryOpType::Neg => out[ABSOLUTE_POS] = -a[ABSOLUTE_POS],
-                UnaryOpType::Sqrt => out[ABSOLUTE_POS] = F::sqrt(a[ABSOLUTE_POS]),
+                UnaryOpType::Neg => out[ABSOLUTE_POS] = -out[ABSOLUTE_POS],
+                UnaryOpType::Sqrt => out[ABSOLUTE_POS] = F::sqrt(out[ABSOLUTE_POS]),
+                UnaryOpType::Exp => out[ABSOLUTE_POS] = F::exp(out[ABSOLUTE_POS]),
+                UnaryOpType::Exp2 => todo!(),
             }
         }
     }
@@ -210,8 +214,8 @@ pub(super) fn unary_int<I: CubeType + CubePrimitive + Send + Sync + DTypeOps + C
         match op {
             UnaryOpType::Neg => tmp = -tmp,
             UnaryOpType::Sqrt => tmp = f32::sqrt(tmp),
-            // For any unsupported op, fail at compile‑time
-            // _ => comptime_error!("unary_int only supports Neg | Sqrt"),
+            UnaryOpType::Exp => tmp = f32::exp(tmp),
+            UnaryOpType::Exp2 => todo!(),
         }
 
         out[ABSOLUTE_POS] = I::cast_from(tmp);
@@ -225,7 +229,8 @@ pub(super) fn unary_int<I: CubeType + CubePrimitive + Send + Sync + DTypeOps + C
             match op {
                 UnaryOpType::Neg => tmp = -tmp,
                 UnaryOpType::Sqrt => tmp = f32::sqrt(tmp),
-                // _ => comptime_error!("unary_int only supports Neg | Sqrt"),
+                UnaryOpType::Exp => tmp = f32::exp(tmp),
+                UnaryOpType::Exp2 => todo!(),
             }
 
             out[ABSOLUTE_POS] = I::cast_from(tmp);

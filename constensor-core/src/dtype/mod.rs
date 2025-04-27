@@ -182,33 +182,6 @@ impl Expable for f16 {
     }
 }
 
-pub trait DTypeOps:
-    Copy
-    + Add<Output = Self>
-    + Div<Output = Self>
-    + Sub<Output = Self>
-    + Mul<Output = Self>
-    + Sqrtable
-    + Expable
-    + SimdSupported
-    + GemmDispatch
-    + RandDispatch
-{
-}
-
-#[cfg(feature = "cuda")]
-pub trait DeviceReprLike: DeviceRepr {}
-
-#[cfg(not(feature = "cuda"))]
-pub trait DeviceReprLike {}
-
-impl DeviceReprLike for u8 {}
-impl DeviceReprLike for i32 {}
-impl DeviceReprLike for u32 {}
-impl DeviceReprLike for i64 {}
-impl DeviceReprLike for f32 {}
-impl DeviceReprLike for f64 {}
-
 pub trait MaybeNeg {
     const NAME: &'static str;
 
@@ -255,6 +228,7 @@ pub trait DTypeOps:
     + Mul<Output = Self>
     + MaybeNeg
     + Sqrtable
+    + Expable
     + SimdSupported
     + GemmDispatch
     + RandDispatch
