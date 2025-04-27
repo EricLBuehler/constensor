@@ -30,7 +30,7 @@ impl<T: DType> BackendStorage<T> for CpuStorage<T> {
         Ok(Cow::Borrowed(self))
     }
     fn cast<U: DType>(&self) -> Result<Storage<U>> {
-        let new = self.0.iter().map(|x| U::from_f64(x.to_f64()));
+        let new = self.0.iter().map(|x| U::from_f64(x.cast_f64()));
         Ok(Storage::Cpu(CpuStorage(new.collect())))
     }
 }
@@ -200,10 +200,10 @@ fn eval_node<T: DType + Send + Sync + 'static>(
         }
         Op::Arange { start, step, stop } => {
             let mut buf = pool.lock().unwrap().get_empty_buffer(out_elem_count);
-            let mut x = start.to_f64();
-            while x < stop.to_f64() {
+            let mut x = start.cast_f64();
+            while x < stop.cast_f64() {
                 buf.push(T::from_f64(x));
-                x += step.to_f64();
+                x += step.cast_f64();
             }
             PooledBuffer::new(buf, pool.clone())
         }
@@ -215,8 +215,8 @@ fn eval_node<T: DType + Send + Sync + 'static>(
             PooledBuffer::new(buf, pool.clone())
         }
         Op::Randn { mean, std } => {
-            let mean_f = mean.to_f64();
-            let std_f = std.to_f64();
+            let mean_f = mean.cast_f64();
+            let std_f = std.cast_f64();
             let normal = Normal::new(mean_f, std_f).unwrap();
             let mut buf = pool.lock().unwrap().get_buffer(out_elem_count);
             for elt in &mut buf {

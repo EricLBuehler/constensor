@@ -3,7 +3,10 @@ use std::{
     ops::{Add, Div, Mul, Sub},
 };
 
-use cubecl::prelude::CubePrimitive;
+use cubecl::{
+    prelude::{CubePrimitive, Numeric},
+    CubeElement,
+};
 #[cfg(feature = "bfloat")]
 use half::bf16;
 #[cfg(feature = "half")]
@@ -150,7 +153,17 @@ maybe_neg!(f64);
 
 /// Marker trait for tensor datatypes.
 pub trait DType:
-    Debug + Clone + DTypeOps + Send + Sync + MaybeNeg + DeviceReprLike + CubePrimitive + 'static
+    Debug
+    + Clone
+    + DTypeOps
+    + Send
+    + Sync
+    + MaybeNeg
+    + DeviceReprLike
+    + CubePrimitive
+    + CubeElement
+    + Numeric
+    + 'static
 {
     const ZERO: Self;
     const ONE: Self;
@@ -158,7 +171,7 @@ pub trait DType:
     const C_DEP: Option<&'static str>;
     const INTEGRAL: bool;
 
-    fn to_f64(&self) -> f64;
+    fn cast_f64(&self) -> f64;
     fn from_f64(x: f64) -> Self;
 }
 
@@ -172,7 +185,7 @@ macro_rules! dtype {
             const C_DEP: Option<&'static str> = None;
             const INTEGRAL: bool = $integral;
 
-            fn to_f64(&self) -> f64 {
+            fn cast_f64(&self) -> f64 {
                 *self as f64
             }
             fn from_f64(x: f64) -> Self {
@@ -203,7 +216,7 @@ impl DType for f16 {
     const C_DEP: Option<&'static str> = Some("#include \"cuda_fp16.h\"");
     const INTEGRAL: bool = false;
 
-    fn to_f64(&self) -> f64 {
+    fn cast_f64(&self) -> f64 {
         self.to_f64_const()
     }
     fn from_f64(x: f64) -> Self {
@@ -224,7 +237,7 @@ impl DType for bf16 {
     const C_DEP: Option<&'static str> = Some("#include \"cuda_bf16.h\"");
     const INTEGRAL: bool = false;
 
-    fn to_f64(&self) -> f64 {
+    fn cast_f64(&self) -> f64 {
         self.to_f64_const()
     }
     fn from_f64(x: f64) -> Self {

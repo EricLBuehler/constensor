@@ -2,7 +2,13 @@ use std::{borrow::Cow, collections::HashMap, marker::PhantomData};
 
 use super::scheduler::topo_order;
 use crate::Op;
-use cubecl::{cube, prelude::*, wgpu::WgpuRuntime};
+use cubecl::{
+    channel::MutexComputeChannel,
+    cube,
+    prelude::*,
+    server::Handle,
+    wgpu::{WgpuRuntime, WgpuServer},
+};
 
 use crate::{
     device::Dev,
@@ -17,14 +23,36 @@ use super::cpu_backend::CpuStorage;
 
 type RT = WgpuRuntime;
 
+#[cfg(any(feature = "cuda", feature = "hip"))]
+const DEVICE: cubecl::wgpu::WgpuDevice = cubecl::wgpu::WgpuDevice::DiscreteGpu(0);
+#[cfg(feature = "metal")]
+const DEVICE: cubecl::wgpu::WgpuDevice = cubecl::wgpu::WgpuDevice::IntegratedGpu(0);
+#[cfg(not(any(feature = "cuda", feature = "hip", feature = "metal")))]
+const DEVICE: cubecl::wgpu::WgpuDevice = cubecl::wgpu::WgpuDevice::DefaultDevice;
+
+fn client() -> ComputeClient<WgpuServer, MutexComputeChannel<WgpuServer>> {
+    RT::client(&DEVICE)
+}
+
+const VECTORIZATION: u32 = 4;
+
 pub struct WgpuDevice;
 
 pub struct WgpuStorage<X: DType> {
+    handle: Handle,
     ghost: PhantomData<X>,
 }
 
 impl<X: DType> BackendStorage<X> for WgpuStorage<X> {
     fn to_cpu_storage(&self) -> Result<Cow<CpuStorage<X>>> {
+        let client = client();
+
+        let bytes = client.read_one(self.handle.clone().binding());
+        let output = X::from_bytes(&bytes);
+
+        println!("Executed runtime {:?} => {output:?}", RT::name(&client));
+        // TODO: dispatch binary operation via cubecl kernel
+        // e.g., binary::<T, RT>(...)
         todo!()
     }
 
@@ -64,76 +92,94 @@ impl BackendDevice for WgpuDevice {
             unreachable!("Expected Wgpu compiled graph");
         };
 
+        let client = client();
+
         let mut handles = HashMap::new();
         for &idx in order.iter() {
             let node = &graph[idx];
-            if let Op::BinaryOp {
-                l_id,
-                r_id,
-                operator,
-            } = &node.op
-            {
-                #[cfg(any(feature = "cuda", feature = "hip"))]
-                let device = cubecl::wgpu::WgpuDevice::DiscreteGpu(0);
-                #[cfg(feature = "metal")]
-                let device = cubecl::wgpu::WgpuDevice::IntegratedGpu(0);
-                #[cfg(not(any(feature = "cuda", feature = "hip", feature = "metal")))]
-                let device = cubecl::wgpu::WgpuDevice::DefaultDevice;
+            let out_elem_count: usize = node.shape.iter().product();
 
-                let client = RT::client(&device);
+            match &node.op {
+                Op::Fill { v } => {
+                    let output_handle = client.empty(out_elem_count * core::mem::size_of::<T>());
 
-                let a = &[1., 2., 3., 4., 5., 6., 7., 8.];
-                let b = &[1., 2., 3., 4., 5., 6., 7., 8.];
-                let vectorization = 4;
-                let output_handle = client.empty(a.len() * core::mem::size_of::<f32>());
-                let a_handle = client.create(f32::as_bytes(a));
-                let b_handle = client.create(f32::as_bytes(b));
+                    let out: ArrayArg<'_, RT> = unsafe {
+                        ArrayArg::from_raw_parts::<T>(
+                            &output_handle,
+                            out_elem_count,
+                            VECTORIZATION as u8,
+                        )
+                    };
+                    unsafe {
+                        kernels::fill::launch_unchecked::<T, WgpuRuntime>(
+                            &client,
+                            CubeCount::Static(VECTORIZATION, 1, 1),
+                            CubeDim::new((out_elem_count as u32).div_ceil(VECTORIZATION), 1, 1),
+                            out,
+                            ScalarArg::new(*v),
+                            out_elem_count as u32,
+                        );
+                    };
 
-                unsafe {
-                    let mut a_seq: SequenceArg<'_, RT, Array<T>> = SequenceArg::new();
-                    a_seq.push(ArrayArg::from_raw_parts::<f32>(
-                        &a_handle,
-                        a.len(),
-                        vectorization as u8,
-                    ));
+                    handles.insert(idx, output_handle.clone());
+                }
+                Op::BinaryOp {
+                    l_id,
+                    r_id,
+                    operator,
+                } => {
+                    let a_handle = &handles[&l_id.get()];
+                    let b_handle = &handles[&r_id.get()];
+                    let output_handle = client.empty(out_elem_count * core::mem::size_of::<T>());
 
-                    let mut b_seq: SequenceArg<'_, RT, Array<T>> = SequenceArg::new();
-                    b_seq.push(ArrayArg::from_raw_parts::<f32>(
-                        &b_handle,
-                        b.len(),
-                        vectorization as u8,
-                    ));
+                    unsafe {
+                        let mut a_seq: SequenceArg<'_, RT, Array<T>> = SequenceArg::new();
+                        a_seq.push(ArrayArg::from_raw_parts::<T>(
+                            &a_handle,
+                            out_elem_count,
+                            VECTORIZATION as u8,
+                        ));
 
-                    let mut out_seq: SequenceArg<'_, RT, Array<T>> = SequenceArg::new();
-                    out_seq.push(ArrayArg::from_raw_parts::<f32>(
-                        &output_handle,
-                        a.len(),
-                        vectorization as u8,
-                    ));
+                        let mut b_seq: SequenceArg<'_, RT, Array<T>> = SequenceArg::new();
+                        b_seq.push(ArrayArg::from_raw_parts::<T>(
+                            &b_handle,
+                            out_elem_count,
+                            VECTORIZATION as u8,
+                        ));
 
-                    let mut ops = Sequence::new();
-                    ops.push(BinaryOpType::Add);
-                    kernels::binary::launch_unchecked(
-                        &client,
-                        CubeCount::Static(vectorization, 1, 1),
-                        CubeDim::new((a.len() as u32).div_ceil(vectorization), 1, 1),
-                        a_seq,
-                        b_seq,
-                        out_seq,
-                        a.len() as u32,
-                        ops,
-                    );
-                };
+                        let mut out_seq: SequenceArg<'_, RT, Array<T>> = SequenceArg::new();
+                        out_seq.push(ArrayArg::from_raw_parts::<T>(
+                            &output_handle,
+                            out_elem_count,
+                            VECTORIZATION as u8,
+                        ));
 
-                handles.insert(idx, output_handle.clone());
-                let bytes = client.read_one(output_handle.binding());
-                let output = f32::from_bytes(&bytes);
+                        let mut ops = Sequence::new();
+                        ops.push(BinaryOpType::Add);
+                        kernels::binary::launch_unchecked(
+                            &client,
+                            CubeCount::Static(VECTORIZATION, 1, 1),
+                            CubeDim::new((out_elem_count as u32).div_ceil(VECTORIZATION), 1, 1),
+                            a_seq,
+                            b_seq,
+                            out_seq,
+                            out_elem_count as u32,
+                            ops,
+                        );
+                    };
 
-                println!("Executed runtime {:?} => {output:?}", RT::name(&client));
-                // TODO: dispatch binary operation via cubecl kernel
-                // e.g., binary::<T, RT>(...)
+                    handles.insert(idx, output_handle.clone());
+                }
+
+                _ => todo!(),
             }
         }
-        Ok(WgpuStorage { ghost: PhantomData })
+
+        let key = *handles.keys().max().unwrap();
+        let final_handle = handles.remove(&key).expect("No output");
+        Ok(WgpuStorage {
+            handle: final_handle,
+            ghost: PhantomData,
+        })
     }
 }

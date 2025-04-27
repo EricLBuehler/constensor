@@ -27,3 +27,16 @@ pub(super) fn binary<T: CubeType + CubePrimitive + Send + Sync + DTypeOps>(
         }
     }
 }
+
+#[cube(launch_unchecked)]
+pub(super) fn fill<
+    T: CubeType + CubePrimitive + Send + Sync + LaunchArgExpand + Numeric + DTypeOps,
+>(
+    out: &mut Array<T>,
+    value: T,
+    #[comptime] numel: u32,
+) {
+    if ABSOLUTE_POS < numel {
+        out[ABSOLUTE_POS] = value;
+    }
+}

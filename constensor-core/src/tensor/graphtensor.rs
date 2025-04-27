@@ -177,7 +177,7 @@ impl<const A: usize, T: DType, D: Dev> GraphTensor<R1<A>, T, D> {
     /// A GraphTensor representing a vector ranging from `start` to `stop` with `step` computed using A.
     pub fn arange(graph: &mut Graph<T>, start: T, stop: T) -> Self {
         let id = graph.next_id();
-        let step = (stop.to_f64() - start.to_f64()) / (A as f64);
+        let step = (stop.cast_f64() - start.cast_f64()) / (A as f64);
         let strides = contiguous_strides(&[A]);
         graph.add_op::<R1<A>>(
             Op::Arange {
