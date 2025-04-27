@@ -4,7 +4,6 @@ use super::scheduler::topo_order;
 use crate::Op;
 use cubecl::{
     channel::MutexComputeChannel,
-    cube,
     prelude::*,
     server::Handle,
     wgpu::{WgpuRuntime, WgpuServer},
@@ -12,12 +11,11 @@ use cubecl::{
 
 use crate::{
     device::Dev,
-    graph::BinaryOpType,
     storage::{BackendDevice, BackendStorage, Storage},
     CompiledGraph, DType, GraphNode, Result, Shape,
 };
 
-mod kernels;
+pub(crate) mod kernels;
 
 use super::cpu_backend::CpuStorage;
 
@@ -83,7 +81,7 @@ impl BackendDevice for WgpuDevice {
         let CompiledGraph::Wgpu {
             order,
             graph,
-            ghost,
+            ghost: _,
         } = comp
         else {
             unreachable!("Expected Wgpu compiled graph");
@@ -120,6 +118,7 @@ impl BackendDevice for WgpuDevice {
 
                     handles.insert(idx, output_handle.clone());
                 }
+
                 Op::BinaryOp {
                     l_id,
                     r_id,
@@ -130,28 +129,24 @@ impl BackendDevice for WgpuDevice {
                     let output_handle = client.empty(out_elem_count * core::mem::size_of::<T>());
 
                     unsafe {
-                        let a: ArrayArg<'_, RT> = unsafe {
-                            ArrayArg::from_raw_parts::<T>(
-                                &a_handle,
-                                out_elem_count,
-                                VECTORIZATION as u8,
-                            )
-                        };
+                        let a: ArrayArg<'_, RT> = ArrayArg::from_raw_parts::<T>(
+                            &a_handle,
+                            out_elem_count,
+                            VECTORIZATION as u8,
+                        );
 
-                        let mut b_seq: SequenceArg<'_, RT, Array<T>> = SequenceArg::new();
+                        let mut b_seq: SequenceArg<'_, RT, Array<Line<T>>> = SequenceArg::new();
                         b_seq.push(ArrayArg::from_raw_parts::<T>(
                             &b_handle,
                             out_elem_count,
                             VECTORIZATION as u8,
                         ));
 
-                        let out: ArrayArg<'_, RT> = unsafe {
-                            ArrayArg::from_raw_parts::<T>(
-                                &output_handle,
-                                out_elem_count,
-                                VECTORIZATION as u8,
-                            )
-                        };
+                        let out: ArrayArg<'_, RT> = ArrayArg::from_raw_parts::<T>(
+                            &output_handle,
+                            out_elem_count,
+                            VECTORIZATION as u8,
+                        );
 
                         let mut ops = Sequence::new();
                         ops.push(*operator);
@@ -161,6 +156,39 @@ impl BackendDevice for WgpuDevice {
                             CubeDim::new((out_elem_count as u32).div_ceil(VECTORIZATION), 1, 1),
                             a,
                             b_seq,
+                            out,
+                            out_elem_count as u32,
+                            ops,
+                        );
+                    };
+
+                    handles.insert(idx, output_handle.clone());
+                }
+
+                Op::UnaryOp { v_id, operator } => {
+                    let v_handle = &handles[&v_id.get()];
+                    let output_handle = client.empty(out_elem_count * core::mem::size_of::<T>());
+
+                    unsafe {
+                        let a: ArrayArg<'_, RT> = ArrayArg::from_raw_parts::<T>(
+                            &v_handle,
+                            out_elem_count,
+                            VECTORIZATION as u8,
+                        );
+
+                        let out: ArrayArg<'_, RT> = ArrayArg::from_raw_parts::<T>(
+                            &output_handle,
+                            out_elem_count,
+                            VECTORIZATION as u8,
+                        );
+
+                        let mut ops = Sequence::new();
+                        ops.push(*operator);
+                        kernels::unary_auto::<T>(
+                            &client,
+                            CubeCount::Static(VECTORIZATION, 1, 1),
+                            CubeDim::new((out_elem_count as u32).div_ceil(VECTORIZATION), 1, 1),
+                            a,
                             out,
                             out_elem_count as u32,
                             ops,

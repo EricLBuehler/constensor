@@ -1,13 +1,148 @@
-//! Instantiate cubecl kernels for binary operations on all supported dtypes.
+//! Instantiate cubecl kernels for operations on all supported dtypes.
 
-use crate::{dtype::DTypeOps, graph::BinaryOpType};
-use cubecl::{cube, prelude::*};
+use crate::{
+    dtype::DTypeOps,
+    graph::{BinaryOpType, UnaryOpType},
+};
+use cubecl::{channel::MutexComputeChannel, cube, prelude::*, wgpu::WgpuServer};
+
+use super::RT;
+
+pub trait UnaryKernelLaunch: CubeType + CubePrimitive + Send + Sync + Cast {
+    fn launch(
+        client: &ComputeClient<WgpuServer, MutexComputeChannel<WgpuServer>>,
+        count: CubeCount,
+        dim: CubeDim,
+        a: ArrayArg<'_, RT>,
+        out: ArrayArg<'_, RT>,
+        numel: u32,
+        ops: Sequence<UnaryOpType>,
+    );
+}
+
+// Integer impl → forwards to unary_int
+macro_rules! impl_launch_int {
+    ($($t:ty),* $(,)?) => {
+        $(
+            impl UnaryKernelLaunch for $t {
+                #[inline(always)]
+                fn launch(
+                    client: &ComputeClient<WgpuServer, MutexComputeChannel<WgpuServer>>,
+                    count: CubeCount,
+                    dim: CubeDim,
+                    a: ArrayArg<'_, RT>,
+                    out: ArrayArg<'_, RT>,
+                    numel: u32,
+                    ops: Sequence<UnaryOpType>,
+                ) {
+                    unsafe { unary_int::launch_unchecked::<Self, RT>(client, count, dim, a, out, numel, ops) };
+                }
+            }
+        )*
+    };
+}
+
+impl_launch_int!(i32, i64, u8, u32);
+
+impl UnaryKernelLaunch for f32 {
+    #[inline(always)]
+    fn launch(
+        client: &ComputeClient<WgpuServer, MutexComputeChannel<WgpuServer>>,
+        count: CubeCount,
+        dim: CubeDim,
+        a: ArrayArg<'_, RT>,
+        out: ArrayArg<'_, RT>,
+        numel: u32,
+        ops: Sequence<UnaryOpType>,
+    ) {
+        unsafe {
+            unary_float::launch_unchecked::<Self, RT>(client, count, dim, a, out, numel, ops)
+        };
+    }
+}
+
+impl UnaryKernelLaunch for f64 {
+    #[inline(always)]
+    fn launch(
+        client: &ComputeClient<WgpuServer, MutexComputeChannel<WgpuServer>>,
+        count: CubeCount,
+        dim: CubeDim,
+        a: ArrayArg<'_, RT>,
+        out: ArrayArg<'_, RT>,
+        numel: u32,
+        ops: Sequence<UnaryOpType>,
+    ) {
+        unsafe {
+            unary_float::launch_unchecked::<Self, RT>(client, count, dim, a, out, numel, ops)
+        };
+    }
+}
+
+#[cfg(feature = "half")]
+impl UnaryKernelLaunch for half::f16 {
+    #[inline(always)]
+    fn launch(
+        client: &ComputeClient<WgpuServer, MutexComputeChannel<WgpuServer>>,
+        count: CubeCount,
+        dim: CubeDim,
+        a: ArrayArg<'_, RT>,
+        out: ArrayArg<'_, RT>,
+        numel: u32,
+        ops: Sequence<UnaryOpType>,
+    ) {
+        unsafe {
+            unary_float::launch_unchecked::<Self, RT>(client, count, dim, a, out, numel, ops)
+        };
+    }
+}
+
+#[cfg(feature = "bfloat")]
+impl UnaryKernelLaunch for half::bf16 {
+    #[inline(always)]
+    fn launch(
+        client: &ComputeClient<WgpuServer, MutexComputeChannel<WgpuServer>>,
+        count: CubeCount,
+        dim: CubeDim,
+        a: ArrayArg<'_, RT>,
+        out: ArrayArg<'_, RT>,
+        numel: u32,
+        ops: Sequence<UnaryOpType>,
+    ) {
+        unsafe {
+            unary_float::launch_unchecked::<Self, RT>(client, count, dim, a, out, numel, ops)
+        };
+    }
+}
+
+/// Convenience wrapper that launches the *right* kernel for `T`.
+///
+/// `numel` and `ops` are compile‑time parameters exactly like the inner
+/// kernels, so you call this with the same `cube!` launch macro you
+/// already use.
+///
+/// ```ignore
+/// cube!(
+///     ctx,
+///     unary_auto::<u32>( &a, &mut out, comptime numel, comptime ops_seq )
+/// );
+/// ```
+pub(super) fn unary_auto<T: UnaryKernelLaunch>(
+    client: &ComputeClient<WgpuServer, MutexComputeChannel<WgpuServer>>,
+    count: CubeCount,
+    dim: CubeDim,
+    a: ArrayArg<'_, RT>,
+    out: ArrayArg<'_, RT>,
+    numel: u32,
+    ops: Sequence<UnaryOpType>,
+) {
+    T::launch(client, count, dim, a, out, numel, ops);
+}
 
 #[cube(launch_unchecked)]
 pub(super) fn binary<T: CubeType + CubePrimitive + Send + Sync + DTypeOps>(
-    a: &Array<T>,
-    b: &Sequence<Array<T>>,
-    out: &mut Array<T>,
+    a: &Array<Line<T>>,
+    b: &Sequence<Array<Line<T>>>,
+    out: &mut Array<Line<T>>,
     #[comptime] numel: u32,
     #[comptime] ops: Sequence<BinaryOpType>,
 ) {
@@ -31,6 +166,69 @@ pub(super) fn binary<T: CubeType + CubePrimitive + Send + Sync + DTypeOps>(
                 BinaryOpType::Mul => out[ABSOLUTE_POS] = out[ABSOLUTE_POS] * bv[ABSOLUTE_POS],
                 BinaryOpType::Div => out[ABSOLUTE_POS] = out[ABSOLUTE_POS] / bv[ABSOLUTE_POS],
             }
+        }
+    }
+}
+
+#[cube(launch_unchecked)]
+pub(super) fn unary_float<F: Float>(
+    a: &Array<F>,
+    out: &mut Array<F>,
+    #[comptime] numel: u32,
+    #[comptime] ops: Sequence<UnaryOpType>,
+) {
+    if ABSOLUTE_POS < numel {
+        let op = comptime! { ops.index(0) };
+        match op {
+            UnaryOpType::Neg => out[ABSOLUTE_POS] = -a[ABSOLUTE_POS],
+            UnaryOpType::Sqrt => out[ABSOLUTE_POS] = F::sqrt(a[ABSOLUTE_POS]),
+        }
+
+        #[unroll]
+        for index in 1..ops.len() {
+            let op = comptime! { ops.index(index.clone()) };
+            match op {
+                UnaryOpType::Neg => out[ABSOLUTE_POS] = -a[ABSOLUTE_POS],
+                UnaryOpType::Sqrt => out[ABSOLUTE_POS] = F::sqrt(a[ABSOLUTE_POS]),
+            }
+        }
+    }
+}
+
+#[cube(launch_unchecked)]
+pub(super) fn unary_int<I: CubeType + CubePrimitive + Send + Sync + DTypeOps + Cast>(
+    a: &Array<I>,
+    out: &mut Array<I>,
+    #[comptime] numel: u32,
+    #[comptime] ops: Sequence<UnaryOpType>,
+) {
+    if ABSOLUTE_POS < numel {
+        // ---- first op -----------------------------------------------------
+        let op = comptime! { ops.index(0) };
+        let mut tmp: f32 = f32::cast_from(a[ABSOLUTE_POS]);
+
+        match op {
+            UnaryOpType::Neg => tmp = -tmp,
+            UnaryOpType::Sqrt => tmp = f32::sqrt(tmp),
+            // For any unsupported op, fail at compile‑time
+            // _ => comptime_error!("unary_int only supports Neg | Sqrt"),
+        }
+
+        out[ABSOLUTE_POS] = I::cast_from(tmp);
+
+        // ---- remaining ops (if any) --------------------------------------
+        #[unroll]
+        for index in 1..ops.len() {
+            let op = comptime! { ops.index(index.clone()) };
+            let mut tmp: f32 = f32::cast_from(out[ABSOLUTE_POS]);
+
+            match op {
+                UnaryOpType::Neg => tmp = -tmp,
+                UnaryOpType::Sqrt => tmp = f32::sqrt(tmp),
+                // _ => comptime_error!("unary_int only supports Neg | Sqrt"),
+            }
+
+            out[ABSOLUTE_POS] = I::cast_from(tmp);
         }
     }
 }

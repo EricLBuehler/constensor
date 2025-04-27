@@ -5,7 +5,7 @@ fn main() {
     let a = GraphTensor::<R2<3, 4>, f32, Wgpu>::fill(&mut graph, 1.0);
     let b = GraphTensor::<R2<3, 4>, f32, Wgpu>::fill(&mut graph, 2.0);
     let c = GraphTensor::<R2<3, 4>, f32, Wgpu>::fill(&mut graph, 3.0);
-    let res = a * b + c;
+    let res = -c;
 
     graph.visualize("graph.png").unwrap();
 

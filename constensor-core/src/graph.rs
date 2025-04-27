@@ -714,7 +714,7 @@ impl BinaryOpType {
     }
 }
 
-#[derive(PartialEq, Debug, Clone)]
+#[derive(CubeType, Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum UnaryOpType {
     Neg,
     Sqrt,

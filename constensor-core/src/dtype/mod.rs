@@ -4,7 +4,7 @@ use std::{
 };
 
 use cubecl::{
-    prelude::{CubePrimitive, Numeric},
+    prelude::{CubePrimitive, CubeType, Numeric},
     CubeElement,
 };
 #[cfg(feature = "bfloat")]
@@ -87,32 +87,6 @@ sqrt_integral!(u32);
 sqrt_integral!(i32);
 sqrt_integral!(i64);
 
-pub trait DTypeOps:
-    Copy
-    + Add<Output = Self>
-    + Div<Output = Self>
-    + Sub<Output = Self>
-    + Mul<Output = Self>
-    + Sqrtable
-    + SimdSupported
-    + GemmDispatch
-    + RandDispatch
-{
-}
-
-#[cfg(feature = "cuda")]
-pub trait DeviceReprLike: DeviceRepr {}
-
-#[cfg(not(feature = "cuda"))]
-pub trait DeviceReprLike {}
-
-impl DeviceReprLike for u8 {}
-impl DeviceReprLike for i32 {}
-impl DeviceReprLike for u32 {}
-impl DeviceReprLike for i64 {}
-impl DeviceReprLike for f32 {}
-impl DeviceReprLike for f64 {}
-
 pub trait MaybeNeg {
     const NAME: &'static str;
 
@@ -151,6 +125,35 @@ maybe_neg!(i64);
 maybe_neg!(f32);
 maybe_neg!(f64);
 
+pub trait DTypeOps:
+    Copy
+    + Add<Output = Self>
+    + Div<Output = Self>
+    + Sub<Output = Self>
+    + Mul<Output = Self>
+    + MaybeNeg
+    + Sqrtable
+    + SimdSupported
+    + GemmDispatch
+    + RandDispatch
+    + CubeType
+    + crate::wgpu_backend::kernels::UnaryKernelLaunch
+{
+}
+
+#[cfg(feature = "cuda")]
+pub trait DeviceReprLike: DeviceRepr {}
+
+#[cfg(not(feature = "cuda"))]
+pub trait DeviceReprLike {}
+
+impl DeviceReprLike for u8 {}
+impl DeviceReprLike for i32 {}
+impl DeviceReprLike for u32 {}
+impl DeviceReprLike for i64 {}
+impl DeviceReprLike for f32 {}
+impl DeviceReprLike for f64 {}
+
 /// Marker trait for tensor datatypes.
 pub trait DType:
     Debug
@@ -158,7 +161,6 @@ pub trait DType:
     + DTypeOps
     + Send
     + Sync
-    + MaybeNeg
     + DeviceReprLike
     + CubePrimitive
     + CubeElement
