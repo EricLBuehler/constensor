@@ -3,6 +3,7 @@ use std::{
     ops::{Add, Div, Mul, Sub},
 };
 
+use cubecl::prelude::CubePrimitive;
 #[cfg(feature = "bfloat")]
 use half::bf16;
 #[cfg(feature = "half")]
@@ -15,7 +16,6 @@ use gemm::GemmDispatch;
 use rand::RandDispatch;
 use simd_ops::SimdSupported;
 
-mod cubecl;
 mod gemm;
 mod rand;
 mod simd_ops;
@@ -150,7 +150,7 @@ maybe_neg!(f64);
 
 /// Marker trait for tensor datatypes.
 pub trait DType:
-    Debug + Clone + DTypeOps + Send + Sync + MaybeNeg + DeviceReprLike + 'static
+    Debug + Clone + DTypeOps + Send + Sync + MaybeNeg + DeviceReprLike + CubePrimitive + 'static
 {
     const ZERO: Self;
     const ONE: Self;

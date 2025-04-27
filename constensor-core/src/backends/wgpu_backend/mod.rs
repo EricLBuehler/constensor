@@ -1,4 +1,4 @@
-use std::{borrow::Cow, marker::PhantomData};
+use std::{borrow::Cow, collections::HashMap, marker::PhantomData};
 
 use super::scheduler::topo_order;
 use crate::Op;
@@ -10,6 +10,8 @@ use crate::{
     storage::{BackendDevice, BackendStorage, Storage},
     CompiledGraph, DType, GraphNode, Result, Shape,
 };
+
+mod kernels;
 
 use super::cpu_backend::CpuStorage;
 
@@ -61,6 +63,8 @@ impl BackendDevice for WgpuDevice {
         else {
             unreachable!("Expected Wgpu compiled graph");
         };
+
+        let mut handles = HashMap::new();
         for &idx in order.iter() {
             let node = &graph[idx];
             if let Op::BinaryOp {
@@ -86,41 +90,42 @@ impl BackendDevice for WgpuDevice {
                 let b_handle = client.create(f32::as_bytes(b));
 
                 unsafe {
-                    // let mut a_seq = SequenceArg::new();
-                    // a_seq.push(ArrayArg::from_raw_parts::<f32>(
-                    //     &a_handle,
-                    //     a.len(),
-                    //     vectorization as u8,
-                    // ));
+                    let mut a_seq: SequenceArg<'_, RT, Array<T>> = SequenceArg::new();
+                    a_seq.push(ArrayArg::from_raw_parts::<f32>(
+                        &a_handle,
+                        a.len(),
+                        vectorization as u8,
+                    ));
 
-                    // let mut b_seq = SequenceArg::new();
-                    // b_seq.push(ArrayArg::from_raw_parts::<f32>(
-                    //     &b_handle,
-                    //     b.len(),
-                    //     vectorization as u8,
-                    // ));
+                    let mut b_seq: SequenceArg<'_, RT, Array<T>> = SequenceArg::new();
+                    b_seq.push(ArrayArg::from_raw_parts::<f32>(
+                        &b_handle,
+                        b.len(),
+                        vectorization as u8,
+                    ));
 
-                    // let mut out_seq = SequenceArg::new();
-                    // out_seq.push(ArrayArg::from_raw_parts::<f32>(
-                    //     &output_handle,
-                    //     a.len(),
-                    //     vectorization as u8,
-                    // ));
+                    let mut out_seq: SequenceArg<'_, RT, Array<T>> = SequenceArg::new();
+                    out_seq.push(ArrayArg::from_raw_parts::<f32>(
+                        &output_handle,
+                        a.len(),
+                        vectorization as u8,
+                    ));
 
-                    // let mut ops = Sequence::new();
-                    // ops.push(BinaryOpType::Add);
-                    // binary::launch_unchecked::<f32, RT>(
-                    //     &client,
-                    //     CubeCount::Static(vectorization, 1, 1),
-                    //     CubeDim::new((a.len() as u32).div_ceil(vectorization), 1, 1),
-                    //     a_seq,
-                    //     b_seq,
-                    //     out_seq,
-                    //     a.len() as u32,
-                    //     ops,
-                    // )
+                    let mut ops = Sequence::new();
+                    ops.push(BinaryOpType::Add);
+                    kernels::binary::launch_unchecked(
+                        &client,
+                        CubeCount::Static(vectorization, 1, 1),
+                        CubeDim::new((a.len() as u32).div_ceil(vectorization), 1, 1),
+                        a_seq,
+                        b_seq,
+                        out_seq,
+                        a.len() as u32,
+                        ops,
+                    );
                 };
 
+                handles.insert(idx, output_handle.clone());
                 let bytes = client.read_one(output_handle.binding());
                 let output = f32::from_bytes(&bytes);
 
