@@ -3,6 +3,10 @@ use std::{
     ops::{Add, Div, Mul, Sub},
 };
 
+use cubecl::{
+    prelude::{CubePrimitive, CubeType, Numeric},
+    CubeElement,
+};
 #[cfg(feature = "bfloat")]
 use half::bf16;
 #[cfg(feature = "half")]
@@ -178,33 +182,6 @@ impl Expable for f16 {
     }
 }
 
-pub trait DTypeOps:
-    Copy
-    + Add<Output = Self>
-    + Div<Output = Self>
-    + Sub<Output = Self>
-    + Mul<Output = Self>
-    + Sqrtable
-    + Expable
-    + SimdSupported
-    + GemmDispatch
-    + RandDispatch
-{
-}
-
-#[cfg(feature = "cuda")]
-pub trait DeviceReprLike: DeviceRepr {}
-
-#[cfg(not(feature = "cuda"))]
-pub trait DeviceReprLike {}
-
-impl DeviceReprLike for u8 {}
-impl DeviceReprLike for i32 {}
-impl DeviceReprLike for u32 {}
-impl DeviceReprLike for i64 {}
-impl DeviceReprLike for f32 {}
-impl DeviceReprLike for f64 {}
-
 pub trait MaybeNeg {
     const NAME: &'static str;
 
@@ -243,9 +220,48 @@ maybe_neg!(i64);
 maybe_neg!(f32);
 maybe_neg!(f64);
 
+pub trait DTypeOps:
+    Copy
+    + Add<Output = Self>
+    + Div<Output = Self>
+    + Sub<Output = Self>
+    + Mul<Output = Self>
+    + MaybeNeg
+    + Sqrtable
+    + Expable
+    + SimdSupported
+    + GemmDispatch
+    + RandDispatch
+    + CubeType
+    + crate::wgpu_backend::kernels::UnaryKernelLaunch
+{
+}
+
+#[cfg(feature = "cuda")]
+pub trait DeviceReprLike: DeviceRepr {}
+
+#[cfg(not(feature = "cuda"))]
+pub trait DeviceReprLike {}
+
+impl DeviceReprLike for u8 {}
+impl DeviceReprLike for i32 {}
+impl DeviceReprLike for u32 {}
+impl DeviceReprLike for i64 {}
+impl DeviceReprLike for f32 {}
+impl DeviceReprLike for f64 {}
+
 /// Marker trait for tensor datatypes.
 pub trait DType:
-    Debug + Clone + DTypeOps + Send + Sync + MaybeNeg + DeviceReprLike + 'static
+    Debug
+    + Clone
+    + DTypeOps
+    + Send
+    + Sync
+    + DeviceReprLike
+    + CubePrimitive
+    + CubeElement
+    + Numeric
+    + 'static
 {
     const ZERO: Self;
     const ONE: Self;
@@ -253,7 +269,7 @@ pub trait DType:
     const C_DEP: Option<&'static str>;
     const INTEGRAL: bool;
 
-    fn to_f64(&self) -> f64;
+    fn cast_f64(&self) -> f64;
     fn from_f64(x: f64) -> Self;
 }
 
@@ -267,7 +283,7 @@ macro_rules! dtype {
             const C_DEP: Option<&'static str> = None;
             const INTEGRAL: bool = $integral;
 
-            fn to_f64(&self) -> f64 {
+            fn cast_f64(&self) -> f64 {
                 *self as f64
             }
             fn from_f64(x: f64) -> Self {
@@ -298,7 +314,7 @@ impl DType for f16 {
     const C_DEP: Option<&'static str> = Some("#include \"cuda_fp16.h\"");
     const INTEGRAL: bool = false;
 
-    fn to_f64(&self) -> f64 {
+    fn cast_f64(&self) -> f64 {
         self.to_f64_const()
     }
     fn from_f64(x: f64) -> Self {
@@ -319,7 +335,7 @@ impl DType for bf16 {
     const C_DEP: Option<&'static str> = Some("#include \"cuda_bf16.h\"");
     const INTEGRAL: bool = false;
 
-    fn to_f64(&self) -> f64 {
+    fn cast_f64(&self) -> f64 {
         self.to_f64_const()
     }
     fn from_f64(x: f64) -> Self {

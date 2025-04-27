@@ -43,9 +43,8 @@
 //! assert_eq!(tensor.data().unwrap().to_vec(), vec![vec![9.0; 4]; 3],);
 //! ```
 
-mod cpu_storage;
-#[cfg(feature = "cuda")]
-mod cuda_backend;
+mod backends;
+use backends::*;
 mod device;
 mod dtype;
 mod error;
@@ -56,7 +55,7 @@ mod tensor;
 
 #[cfg(feature = "cuda")]
 pub use device::Cuda;
-pub use device::{BestDevice, Cpu};
+pub use device::{BestDevice, Cpu, Wgpu};
 pub use dtype::DType;
 pub use error::{Context, Error, Result};
 pub use graph::{CompiledGraph, Graph, GraphNode, Op};
