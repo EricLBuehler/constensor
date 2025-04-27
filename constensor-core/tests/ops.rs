@@ -370,6 +370,38 @@ test_for_device_sqrt!(Cpu, cpu_tests_sqrt);
 #[cfg(feature = "cuda")]
 test_for_device_sqrt!(Cuda<0>, cuda_tests_sqrt);
 
+macro_rules! test_for_device_exp {
+    ($dev:ty, $name:ident) => {
+        mod $name {
+            use super::*;
+
+            #[test]
+            fn exp_float() {
+                let mut graph = Graph::empty();
+                let x = GraphTensor::<R2<3, 4>, f32, $dev>::fill(&mut graph, 0.0);
+                let _res = x.exp();
+                let compiled: CompiledGraph<R2<3, 4>, f32, $dev> = graph.compile().unwrap();
+                let tensor = compiled.run().unwrap();
+                assert_eq!(tensor.data().unwrap().to_vec(), vec![vec![1.0; 4]; 3],);
+            }
+
+            #[test]
+            fn exp2_float() {
+                let mut graph = Graph::empty();
+                let x = GraphTensor::<R2<3, 4>, f32, $dev>::fill(&mut graph, 2.0);
+                let _res = x.exp2();
+                let compiled: CompiledGraph<R2<3, 4>, f32, $dev> = graph.compile().unwrap();
+                let tensor = compiled.run().unwrap();
+                assert_eq!(tensor.data().unwrap().to_vec(), vec![vec![4.0; 4]; 3],);
+            }
+        }
+    };
+}
+
+test_for_device_exp!(Cpu, cpu_tests_exp);
+#[cfg(feature = "cuda")]
+test_for_device_exp!(Cuda, cuda_tests_exp);
+
 macro_rules! test_for_device_rand {
     ($dev:ty, $name:ident) => {
         mod $name {

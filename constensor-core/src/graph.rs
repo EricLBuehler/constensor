@@ -718,6 +718,8 @@ impl BinaryOpType {
 pub enum UnaryOpType {
     Neg,
     Sqrt,
+    Exp,
+    Exp2,
 }
 
 impl UnaryOpType {
@@ -725,6 +727,8 @@ impl UnaryOpType {
         match self {
             Self::Neg => format!("-{val}"),
             Self::Sqrt => format!("static_cast<T>( sqrt( static_cast<double>({val}) ) )"),
+            Self::Exp => format!("static_cast<T>( exp( static_cast<double>({val}) ) )"),
+            Self::Exp2 => format!("static_cast<T>( exp2( static_cast<double>({val}) ) )"),
         }
     }
 
@@ -732,6 +736,8 @@ impl UnaryOpType {
         match self {
             Self::Neg => T::maybe_neg,
             Self::Sqrt => |x: T| x.sqrt(),
+            Self::Exp => |x: T| x.exp(),
+            Self::Exp2 => |x: T| x.exp2(),
         }
     }
 }

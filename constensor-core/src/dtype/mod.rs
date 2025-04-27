@@ -87,6 +87,128 @@ sqrt_integral!(u32);
 sqrt_integral!(i32);
 sqrt_integral!(i64);
 
+pub trait Expable {
+    fn exp(&self) -> Self
+    where
+        Self: Sized;
+    fn exp2(&self) -> Self
+    where
+        Self: Sized;
+}
+
+impl Expable for f32 {
+    fn exp(&self) -> Self
+    where
+        Self: Sized,
+    {
+        f32::exp(*self)
+    }
+    fn exp2(&self) -> Self
+    where
+        Self: Sized,
+    {
+        f32::exp2(*self)
+    }
+}
+
+impl Expable for f64 {
+    fn exp(&self) -> Self
+    where
+        Self: Sized,
+    {
+        f64::exp(*self)
+    }
+    fn exp2(&self) -> Self
+    where
+        Self: Sized,
+    {
+        f64::exp2(*self)
+    }
+}
+
+macro_rules! exp_integral {
+    ($t:ty) => {
+        impl Expable for $t {
+            fn exp(&self) -> Self
+            where
+                Self: Sized,
+            {
+                (*self as f64).exp() as $t
+            }
+            fn exp2(&self) -> Self
+            where
+                Self: Sized,
+            {
+                (*self as f64).exp2() as $t
+            }
+        }
+    };
+}
+
+exp_integral!(u8);
+exp_integral!(u32);
+exp_integral!(i32);
+exp_integral!(i64);
+
+#[cfg(feature = "bfloat")]
+impl Expable for bf16 {
+    fn exp(&self) -> Self
+    where
+        Self: Sized,
+    {
+        bf16::from_f64_const(self.to_f64_const().exp())
+    }
+    fn exp2(&self) -> Self
+    where
+        Self: Sized,
+    {
+        bf16::from_f64_const(self.to_f64_const().exp2())
+    }
+}
+
+#[cfg(feature = "half")]
+impl Expable for f16 {
+    fn exp(&self) -> Self
+    where
+        Self: Sized,
+    {
+        f16::from_f64_const(self.to_f64_const().exp())
+    }
+    fn exp2(&self) -> Self
+    where
+        Self: Sized,
+    {
+        f16::from_f64_const(self.to_f64_const().exp2())
+    }
+}
+
+pub trait DTypeOps:
+    Copy
+    + Add<Output = Self>
+    + Div<Output = Self>
+    + Sub<Output = Self>
+    + Mul<Output = Self>
+    + Sqrtable
+    + Expable
+    + SimdSupported
+    + GemmDispatch
+    + RandDispatch
+{
+}
+
+#[cfg(feature = "cuda")]
+pub trait DeviceReprLike: DeviceRepr {}
+
+#[cfg(not(feature = "cuda"))]
+pub trait DeviceReprLike {}
+
+impl DeviceReprLike for u8 {}
+impl DeviceReprLike for i32 {}
+impl DeviceReprLike for u32 {}
+impl DeviceReprLike for i64 {}
+impl DeviceReprLike for f32 {}
+impl DeviceReprLike for f64 {}
+
 pub trait MaybeNeg {
     const NAME: &'static str;
 

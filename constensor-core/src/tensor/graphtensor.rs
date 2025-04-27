@@ -132,6 +132,46 @@ impl<S: Shape, T: DType, D: Dev> GraphTensor<S, T, D> {
     }
 
     #[must_use]
+    /// Elementwise unary exponential function.  
+    pub fn exp(self) -> GraphTensor<S, T, D> {
+        let id = self.graph.write().unwrap().next_id();
+        self.graph.write().unwrap().add_op::<S>(
+            Op::UnaryOp {
+                v_id: self.id(),
+                operator: UnaryOpType::Exp,
+            },
+            &self.strides,
+            &id,
+        );
+        Self {
+            id,
+            graph: self.graph.clone(),
+            strides: self.strides.clone(),
+            _ghost: PhantomData,
+        }
+    }
+
+    #[must_use]
+    /// Elementwise unary base-2 exponential function.  
+    pub fn exp2(self) -> GraphTensor<S, T, D> {
+        let id = self.graph.write().unwrap().next_id();
+        self.graph.write().unwrap().add_op::<S>(
+            Op::UnaryOp {
+                v_id: self.id(),
+                operator: UnaryOpType::Exp2,
+            },
+            &self.strides,
+            &id,
+        );
+        Self {
+            id,
+            graph: self.graph.clone(),
+            strides: self.strides.clone(),
+            _ghost: PhantomData,
+        }
+    }
+
+    #[must_use]
     /// Create a tensor filled with uniform random values in [0,1).
     pub fn rand(graph: &mut Graph<T>) -> Self {
         let id = graph.next_id();
