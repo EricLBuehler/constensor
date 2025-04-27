@@ -130,12 +130,13 @@ impl BackendDevice for WgpuDevice {
                     let output_handle = client.empty(out_elem_count * core::mem::size_of::<T>());
 
                     unsafe {
-                        let mut a_seq: SequenceArg<'_, RT, Array<T>> = SequenceArg::new();
-                        a_seq.push(ArrayArg::from_raw_parts::<T>(
-                            &a_handle,
-                            out_elem_count,
-                            VECTORIZATION as u8,
-                        ));
+                        let a: ArrayArg<'_, RT> = unsafe {
+                            ArrayArg::from_raw_parts::<T>(
+                                &a_handle,
+                                out_elem_count,
+                                VECTORIZATION as u8,
+                            )
+                        };
 
                         let mut b_seq: SequenceArg<'_, RT, Array<T>> = SequenceArg::new();
                         b_seq.push(ArrayArg::from_raw_parts::<T>(
@@ -144,12 +145,13 @@ impl BackendDevice for WgpuDevice {
                             VECTORIZATION as u8,
                         ));
 
-                        let mut out_seq: SequenceArg<'_, RT, Array<T>> = SequenceArg::new();
-                        out_seq.push(ArrayArg::from_raw_parts::<T>(
-                            &output_handle,
-                            out_elem_count,
-                            VECTORIZATION as u8,
-                        ));
+                        let out: ArrayArg<'_, RT> = unsafe {
+                            ArrayArg::from_raw_parts::<T>(
+                                &output_handle,
+                                out_elem_count,
+                                VECTORIZATION as u8,
+                            )
+                        };
 
                         let mut ops = Sequence::new();
                         ops.push(*operator);
@@ -157,9 +159,9 @@ impl BackendDevice for WgpuDevice {
                             &client,
                             CubeCount::Static(VECTORIZATION, 1, 1),
                             CubeDim::new((out_elem_count as u32).div_ceil(VECTORIZATION), 1, 1),
-                            a_seq,
+                            a,
                             b_seq,
-                            out_seq,
+                            out,
                             out_elem_count as u32,
                             ops,
                         );
