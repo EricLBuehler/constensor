@@ -46,10 +46,10 @@ fn bench_cpu_graph_matmul_256(c: &mut Criterion) {
 
 fn bench_candle_matmul_64(c: &mut Criterion) {
     const N: usize = 64;
-    let a = Tensor::rand(0f32, 1f32, &[1, N, N], &Device::Cpu).unwrap();
-    let b = Tensor::rand(0f32, 1f32, &[1, N, N], &Device::Cpu).unwrap();
     c.bench_function("candle_matmul_64x64", |bencher| {
         bencher.iter(|| {
+            let a = Tensor::rand(0f32, 1f32, &[1, N, N], &Device::Cpu).unwrap();
+            let b = Tensor::rand(0f32, 1f32, &[1, N, N], &Device::Cpu).unwrap();
             let _ = a.matmul(&b).unwrap();
         });
     });
@@ -57,10 +57,10 @@ fn bench_candle_matmul_64(c: &mut Criterion) {
 
 fn bench_candle_matmul_128(c: &mut Criterion) {
     const N: usize = 128;
-    let a = Tensor::rand(0f32, 1f32, &[1, N, N], &Device::Cpu).unwrap();
-    let b = Tensor::rand(0f32, 1f32, &[1, N, N], &Device::Cpu).unwrap();
     c.bench_function("candle_matmul_128x128", |bencher| {
         bencher.iter(|| {
+            let a = Tensor::rand(0f32, 1f32, &[1, N, N], &Device::Cpu).unwrap();
+            let b = Tensor::rand(0f32, 1f32, &[1, N, N], &Device::Cpu).unwrap();
             let _ = a.matmul(&b).unwrap();
         });
     });
@@ -68,10 +68,10 @@ fn bench_candle_matmul_128(c: &mut Criterion) {
 
 fn bench_candle_matmul_256(c: &mut Criterion) {
     const N: usize = 256;
-    let a = Tensor::rand(0f32, 1f32, &[1, N, N], &Device::Cpu).unwrap();
-    let b = Tensor::rand(0f32, 1f32, &[1, N, N], &Device::Cpu).unwrap();
     c.bench_function("candle_matmul_256x256", |bencher| {
         bencher.iter(|| {
+            let a = Tensor::rand(0f32, 1f32, &[1, N, N], &Device::Cpu).unwrap();
+            let b = Tensor::rand(0f32, 1f32, &[1, N, N], &Device::Cpu).unwrap();
             let _ = a.matmul(&b).unwrap();
         });
     });
