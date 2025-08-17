@@ -40,7 +40,7 @@ impl<T: DType> Graph<T> {
     }
 
     /// Read-only access to the list of operations
-    pub fn get_ops(&self) -> RwLockReadGuard<Vec<GraphNode<T>>> {
+    pub fn get_ops(&self) -> RwLockReadGuard<'_, Vec<GraphNode<T>>> {
         self.data.read().unwrap()
     }
 
