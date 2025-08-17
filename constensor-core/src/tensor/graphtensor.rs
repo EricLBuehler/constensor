@@ -242,7 +242,7 @@ impl<S: Shape, T: DType, D: Dev> GraphTensor<S, T, D> {
 
 impl<S: Shape, T: DType, D: Dev> GraphTensor<S, T, D> {
     /// Retrieve the graph for this `GraphTensor`.
-    pub fn graph(&self) -> RwLockReadGuard<Graph<T>> {
+    pub fn graph(&self) -> RwLockReadGuard<'_, Graph<T>> {
         self.graph.read().unwrap()
     }
 
