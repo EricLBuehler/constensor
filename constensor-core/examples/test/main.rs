@@ -5,7 +5,7 @@ fn main() {
     let a = GraphTensor::<R2<3, 4>, f32, Wgpu>::fill(&mut graph, 1.0);
     let b = GraphTensor::<R2<3, 4>, f32, Wgpu>::fill(&mut graph, 2.0);
     let c = GraphTensor::<R2<3, 4>, f32, Wgpu>::fill(&mut graph, 3.0);
-    let res = -c;
+    let _out = a + b + c;
 
     graph.visualize("graph.png").unwrap();
 
@@ -14,5 +14,5 @@ fn main() {
 
     let tensor: Tensor<R2<3, 4>, f32, Wgpu> = res;
 
-    assert_eq!(tensor.data().unwrap().to_vec(), vec![vec![5.0; 4]; 3],);
+    assert_eq!(tensor.data().unwrap().to_vec(), vec![vec![6.0; 4]; 3],);
 }
