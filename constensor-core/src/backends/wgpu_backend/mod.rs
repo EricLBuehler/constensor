@@ -42,7 +42,7 @@ pub struct WgpuStorage<X: DType> {
 }
 
 impl<X: DType> BackendStorage<X> for WgpuStorage<X> {
-    fn to_cpu_storage(&self) -> Result<Cow<CpuStorage<X>>> {
+    fn to_cpu_storage(&self) -> Result<Cow<'_, CpuStorage<X>>> {
         let client = client();
 
         let bytes = client.read_one(self.handle.clone().binding());
