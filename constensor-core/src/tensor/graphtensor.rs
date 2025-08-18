@@ -172,6 +172,46 @@ impl<S: Shape, T: DType, D: Dev> GraphTensor<S, T, D> {
     }
 
     #[must_use]
+    /// Elementwise unary natural logarithm function.  
+    pub fn log(self) -> GraphTensor<S, T, D> {
+        let id = self.graph.write().unwrap().next_id();
+        self.graph.write().unwrap().add_op::<S>(
+            Op::UnaryOp {
+                v_id: self.id(),
+                operator: UnaryOpType::Log,
+            },
+            &self.strides,
+            &id,
+        );
+        Self {
+            id,
+            graph: self.graph.clone(),
+            strides: self.strides.clone(),
+            _ghost: PhantomData,
+        }
+    }
+
+    #[must_use]
+    /// Elementwise unary natural logarithm of (1+x) function.  
+    pub fn log1p(self) -> GraphTensor<S, T, D> {
+        let id = self.graph.write().unwrap().next_id();
+        self.graph.write().unwrap().add_op::<S>(
+            Op::UnaryOp {
+                v_id: self.id(),
+                operator: UnaryOpType::Log1p,
+            },
+            &self.strides,
+            &id,
+        );
+        Self {
+            id,
+            graph: self.graph.clone(),
+            strides: self.strides.clone(),
+            _ghost: PhantomData,
+        }
+    }
+
+    #[must_use]
     /// Create a tensor filled with uniform random values in [0,1).
     pub fn rand(graph: &mut Graph<T>) -> Self {
         let id = graph.next_id();
@@ -202,7 +242,7 @@ impl<S: Shape, T: DType, D: Dev> GraphTensor<S, T, D> {
 
 impl<S: Shape, T: DType, D: Dev> GraphTensor<S, T, D> {
     /// Retrieve the graph for this `GraphTensor`.
-    pub fn graph(&self) -> RwLockReadGuard<Graph<T>> {
+    pub fn graph(&self) -> RwLockReadGuard<'_, Graph<T>> {
         self.graph.read().unwrap()
     }
 

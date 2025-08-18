@@ -41,7 +41,7 @@ impl<T: DType> Graph<T> {
     }
 
     /// Read-only access to the list of operations
-    pub fn get_ops(&self) -> RwLockReadGuard<Vec<GraphNode<T>>> {
+    pub fn get_ops(&self) -> RwLockReadGuard<'_, Vec<GraphNode<T>>> {
         self.data.read().unwrap()
     }
 
@@ -720,6 +720,8 @@ pub enum UnaryOpType {
     Sqrt,
     Exp,
     Exp2,
+    Log,
+    Log1p,
 }
 
 impl UnaryOpType {
@@ -729,6 +731,8 @@ impl UnaryOpType {
             Self::Sqrt => format!("static_cast<T>( sqrt( static_cast<double>({val}) ) )"),
             Self::Exp => format!("static_cast<T>( exp( static_cast<double>({val}) ) )"),
             Self::Exp2 => format!("static_cast<T>( exp2( static_cast<double>({val}) ) )"),
+            Self::Log => format!("static_cast<T>( log( static_cast<double>({val}) ) )"),
+            Self::Log1p => format!("static_cast<T>( log1p( static_cast<double>({val}) ) )"),
         }
     }
 
@@ -738,6 +742,8 @@ impl UnaryOpType {
             Self::Sqrt => |x: T| x.sqrt(),
             Self::Exp => |x: T| x.exp(),
             Self::Exp2 => |x: T| x.exp2(),
+            Self::Log => |x: T| x.log(),
+            Self::Log1p => |x: T| x.log1p(),
         }
     }
 }

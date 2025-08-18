@@ -400,7 +400,53 @@ macro_rules! test_for_device_exp {
 
 test_for_device_exp!(Cpu, cpu_tests_exp);
 #[cfg(feature = "cuda")]
-test_for_device_exp!(Cuda, cuda_tests_exp);
+test_for_device_exp!(Cuda<0>, cuda_tests_exp);
+
+macro_rules! test_for_device_log {
+    ($dev:ty, $name:ident) => {
+        mod $name {
+            use super::*;
+
+            #[test]
+            fn log_float() {
+                let mut graph = Graph::empty();
+                let x = GraphTensor::<R2<3, 4>, f32, $dev>::fill(&mut graph, 1.0);
+                let _res = x.log();
+                let compiled: CompiledGraph<R2<3, 4>, f32, $dev> = graph.compile().unwrap();
+                let tensor = compiled.run().unwrap();
+                assert_eq!(tensor.data().unwrap().to_vec(), vec![vec![0.0; 4]; 3],);
+            }
+
+            #[test]
+            fn log1p_float() {
+                let mut graph = Graph::empty();
+                let x = GraphTensor::<R2<3, 4>, f32, $dev>::fill(&mut graph, 0.0);
+                let _res = x.log1p();
+                let compiled: CompiledGraph<R2<3, 4>, f32, $dev> = graph.compile().unwrap();
+                let tensor = compiled.run().unwrap();
+                assert_eq!(tensor.data().unwrap().to_vec(), vec![vec![0.0; 4]; 3],);
+            }
+
+            #[test]
+            fn log_e_float() {
+                let mut graph = Graph::empty();
+                let x = GraphTensor::<R2<3, 4>, f32, $dev>::fill(&mut graph, std::f32::consts::E);
+                let _res = x.log();
+                let compiled: CompiledGraph<R2<3, 4>, f32, $dev> = graph.compile().unwrap();
+                let tensor = compiled.run().unwrap();
+                for row in tensor.data().unwrap().iter() {
+                    for &val in row.iter() {
+                        assert!((val - 1.0).abs() < 1e-6);
+                    }
+                }
+            }
+        }
+    };
+}
+
+test_for_device_log!(Cpu, cpu_tests_log);
+#[cfg(feature = "cuda")]
+test_for_device_log!(Cuda<0>, cuda_tests_log);
 
 macro_rules! test_for_device_rand {
     ($dev:ty, $name:ident) => {

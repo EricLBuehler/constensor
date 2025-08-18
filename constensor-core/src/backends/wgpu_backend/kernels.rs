@@ -184,6 +184,8 @@ pub(super) fn unary_float<F: Float>(
             UnaryOpType::Sqrt => out[ABSOLUTE_POS] = F::sqrt(a[ABSOLUTE_POS]),
             UnaryOpType::Exp => out[ABSOLUTE_POS] = F::exp(a[ABSOLUTE_POS]),
             UnaryOpType::Exp2 => todo!(),
+            UnaryOpType::Log => todo!(),
+            UnaryOpType::Log1p => todo!(),
         }
 
         #[unroll]
@@ -194,6 +196,8 @@ pub(super) fn unary_float<F: Float>(
                 UnaryOpType::Sqrt => out[ABSOLUTE_POS] = F::sqrt(out[ABSOLUTE_POS]),
                 UnaryOpType::Exp => out[ABSOLUTE_POS] = F::exp(out[ABSOLUTE_POS]),
                 UnaryOpType::Exp2 => todo!(),
+                UnaryOpType::Log => todo!(),
+                UnaryOpType::Log1p => todo!(),
             }
         }
     }
@@ -216,6 +220,8 @@ pub(super) fn unary_int<I: CubeType + CubePrimitive + Send + Sync + DTypeOps + C
             UnaryOpType::Sqrt => tmp = f32::sqrt(tmp),
             UnaryOpType::Exp => tmp = f32::exp(tmp),
             UnaryOpType::Exp2 => todo!(),
+            UnaryOpType::Log => todo!(),
+            UnaryOpType::Log1p => todo!(),
         }
 
         out[ABSOLUTE_POS] = I::cast_from(tmp);
@@ -231,6 +237,8 @@ pub(super) fn unary_int<I: CubeType + CubePrimitive + Send + Sync + DTypeOps + C
                 UnaryOpType::Sqrt => tmp = f32::sqrt(tmp),
                 UnaryOpType::Exp => tmp = f32::exp(tmp),
                 UnaryOpType::Exp2 => todo!(),
+                UnaryOpType::Log => todo!(),
+                UnaryOpType::Log1p => todo!(),
             }
 
             out[ABSOLUTE_POS] = I::cast_from(tmp);

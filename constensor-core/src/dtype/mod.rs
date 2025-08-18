@@ -182,6 +182,101 @@ impl Expable for f16 {
     }
 }
 
+pub trait Loggable {
+    fn log(&self) -> Self
+    where
+        Self: Sized;
+    fn log1p(&self) -> Self
+    where
+        Self: Sized;
+}
+
+impl Loggable for f32 {
+    fn log(&self) -> Self
+    where
+        Self: Sized,
+    {
+        f32::ln(*self)
+    }
+    fn log1p(&self) -> Self
+    where
+        Self: Sized,
+    {
+        f32::ln_1p(*self)
+    }
+}
+
+impl Loggable for f64 {
+    fn log(&self) -> Self
+    where
+        Self: Sized,
+    {
+        f64::ln(*self)
+    }
+    fn log1p(&self) -> Self
+    where
+        Self: Sized,
+    {
+        f64::ln_1p(*self)
+    }
+}
+
+macro_rules! log_integral {
+    ($t:ty) => {
+        impl Loggable for $t {
+            fn log(&self) -> Self
+            where
+                Self: Sized,
+            {
+                (*self as f64).ln() as $t
+            }
+            fn log1p(&self) -> Self
+            where
+                Self: Sized,
+            {
+                (*self as f64).ln_1p() as $t
+            }
+        }
+    };
+}
+
+log_integral!(u8);
+log_integral!(u32);
+log_integral!(i32);
+log_integral!(i64);
+
+#[cfg(feature = "bfloat")]
+impl Loggable for bf16 {
+    fn log(&self) -> Self
+    where
+        Self: Sized,
+    {
+        bf16::from_f64_const(self.to_f64_const().ln())
+    }
+    fn log1p(&self) -> Self
+    where
+        Self: Sized,
+    {
+        bf16::from_f64_const(self.to_f64_const().ln_1p())
+    }
+}
+
+#[cfg(feature = "half")]
+impl Loggable for f16 {
+    fn log(&self) -> Self
+    where
+        Self: Sized,
+    {
+        f16::from_f64_const(self.to_f64_const().ln())
+    }
+    fn log1p(&self) -> Self
+    where
+        Self: Sized,
+    {
+        f16::from_f64_const(self.to_f64_const().ln_1p())
+    }
+}
+
 pub trait MaybeNeg {
     const NAME: &'static str;
 
@@ -229,6 +324,7 @@ pub trait DTypeOps:
     + MaybeNeg
     + Sqrtable
     + Expable
+    + Loggable
     + SimdSupported
     + GemmDispatch
     + RandDispatch

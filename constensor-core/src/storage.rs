@@ -15,7 +15,7 @@ pub enum Storage<T: DType> {
 }
 
 impl<T: DType> Storage<T> {
-    pub(crate) fn to_cpu_storage(&self) -> Result<Cow<CpuStorage<T>>> {
+    pub(crate) fn to_cpu_storage(&self) -> Result<Cow<'_, CpuStorage<T>>> {
         match self {
             Self::Cpu(cpu) => cpu.to_cpu_storage(),
             Self::Wgpu(wgpu) => wgpu.to_cpu_storage(),
@@ -35,7 +35,7 @@ impl<T: DType> Storage<T> {
 }
 
 pub trait BackendStorage<T: DType> {
-    fn to_cpu_storage(&self) -> Result<Cow<CpuStorage<T>>>;
+    fn to_cpu_storage(&self) -> Result<Cow<'_, CpuStorage<T>>>;
     fn cast<U: DType>(&self) -> Result<Storage<U>>;
 }
 

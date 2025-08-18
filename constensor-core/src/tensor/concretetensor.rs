@@ -60,7 +60,7 @@ macro_rules! tensor_api {
     ($device:ty) => {
         impl<T: DType, const A: usize> Tensor<R1<A>, T, $device> {
             /// Get data for a vector.
-            pub fn data(&self) -> Result<Cow<Vec<T>>> {
+            pub fn data(&self) -> Result<Cow<'_, Vec<T>>> {
                 let data = self.storage.to_cpu_storage()?;
                 Ok(Cow::Owned(data.into_owned().0))
             }
@@ -68,7 +68,7 @@ macro_rules! tensor_api {
 
         impl<T: DType, const A: usize, const B: usize> Tensor<R2<A, B>, T, $device> {
             /// Get data for a matrix, respecting strides (supports views/transposes).
-            pub fn data(&self) -> Result<Cow<Vec<Vec<T>>>> {
+            pub fn data(&self) -> Result<Cow<'_, Vec<Vec<T>>>> {
                 let data = self.storage.to_cpu_storage()?;
                 let mut rows = Vec::with_capacity(A);
                 for i in 0..A {
@@ -86,7 +86,7 @@ macro_rules! tensor_api {
             Tensor<R3<A, B, C>, T, $device>
         {
             /// Get data for a 3 dimensional tensor, respecting strides (supports views/transposes).
-            pub fn data(&self) -> Result<Cow<Vec<Vec<Vec<T>>>>> {
+            pub fn data(&self) -> Result<Cow<'_, Vec<Vec<Vec<T>>>>> {
                 let data = self.storage.to_cpu_storage()?;
                 let mut top_rows = Vec::with_capacity(A);
                 for i in 0..A {
