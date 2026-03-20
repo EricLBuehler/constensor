@@ -1,5 +1,4 @@
-use petgraph::algo::toposort;
-use petgraph::graphmap::DiGraphMap;
+use super::scheduler::topo_order;
 use std::{borrow::Cow, marker::PhantomData};
 
 use pool::{BufferPool, PooledBuffer};
@@ -31,7 +30,7 @@ impl<T: DType> BackendStorage<T> for CpuStorage<T> {
         Ok(Cow::Borrowed(self))
     }
     fn cast<U: DType>(&self) -> Result<Storage<U>> {
-        let new = self.0.iter().map(|x| U::from_f64(x.to_f64()));
+        let new = self.0.iter().map(|x| U::from_f64(x.cast_f64()));
         Ok(Storage::Cpu(CpuStorage(new.collect())))
     }
 }
@@ -43,47 +42,8 @@ impl BackendDevice for CpuDevice {
         &self,
         graph: Vec<GraphNode<T>>,
     ) -> Result<CompiledGraph<S, T, D>> {
-        // Build a dependency graph of tensor indices
-        let mut dep_graph = DiGraphMap::<usize, ()>::new();
-        for id in 0..graph.len() {
-            dep_graph.add_node(id);
-        }
-
-        for node in graph.iter() {
-            let idx = node.id.get();
-            match &node.op {
-                Op::BinaryOp { l_id, r_id, .. } => {
-                    dep_graph.add_edge(l_id.get(), idx, ());
-                    dep_graph.add_edge(r_id.get(), idx, ());
-                }
-                Op::UnaryOp { v_id, .. } => {
-                    dep_graph.add_edge(v_id.get(), idx, ());
-                }
-                Op::FusedMulAdd { a_id, b_id, c_id } => {
-                    dep_graph.add_edge(a_id.get(), idx, ());
-                    dep_graph.add_edge(b_id.get(), idx, ());
-                    dep_graph.add_edge(c_id.get(), idx, ());
-                }
-                Op::MatMul {
-                    l_id, r_id, o_id, ..
-                } => {
-                    dep_graph.add_edge(l_id.get(), idx, ());
-                    dep_graph.add_edge(r_id.get(), idx, ());
-                    if let Some(o_id) = o_id {
-                        dep_graph.add_edge(o_id.get(), idx, ());
-                    }
-                }
-                Op::Permute { v_id } => {
-                    dep_graph.add_edge(v_id.get(), idx, ());
-                }
-                // NoOp, Fill/Arange, Rand/Randn don’t create incoming edges
-                Op::NoOp | Op::Fill { .. } | Op::Arange { .. } | Op::Rand | Op::Randn { .. } => {}
-            }
-        }
-
-        // Compute topological order
-        let order = toposort(&dep_graph, None).expect("Cycle detected in graph!");
-
+        // Compute topological order using shared scheduler
+        let order = topo_order(&graph);
         Ok(CompiledGraph::Cpu {
             order,
             graph,
@@ -240,10 +200,10 @@ fn eval_node<T: DType + Send + Sync + 'static>(
         }
         Op::Arange { start, step, stop } => {
             let mut buf = pool.lock().unwrap().get_empty_buffer(out_elem_count);
-            let mut x = start.to_f64();
-            while x < stop.to_f64() {
+            let mut x = start.cast_f64();
+            while x < stop.cast_f64() {
                 buf.push(T::from_f64(x));
-                x += step.to_f64();
+                x += step.cast_f64();
             }
             PooledBuffer::new(buf, pool.clone())
         }
@@ -255,8 +215,8 @@ fn eval_node<T: DType + Send + Sync + 'static>(
             PooledBuffer::new(buf, pool.clone())
         }
         Op::Randn { mean, std } => {
-            let mean_f = mean.to_f64();
-            let std_f = std.to_f64();
+            let mean_f = mean.cast_f64();
+            let std_f = std.cast_f64();
             let normal = Normal::new(mean_f, std_f).unwrap();
             let mut buf = pool.lock().unwrap().get_buffer(out_elem_count);
             for elt in &mut buf {

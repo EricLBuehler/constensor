@@ -13,6 +13,7 @@ use std::{
 
 use crate::{device::Dev, tensor::concretetensor::from_storage, DType, Result, Shape, Tensor};
 
+use cubecl::CubeType;
 use petgraph::Graph as PetGraph;
 use petgraph::{dot::Dot, graph::NodeIndex};
 
@@ -663,6 +664,12 @@ pub enum CompiledGraph<S: Shape, T: DType, D: Dev> {
         graph: Vec<GraphNode<T>>,
         ghost: PhantomData<(S, T, D)>,
     },
+    /// Compiled graph for WGPU backend.
+    Wgpu {
+        order: Vec<usize>,
+        graph: Vec<GraphNode<T>>,
+        ghost: PhantomData<(S, T, D)>,
+    },
     #[cfg(feature = "cuda")]
     Cuda {
         kernels: Vec<crate::cuda_backend::CudaCompiledKernel<T>>,
@@ -679,7 +686,7 @@ impl<S: Shape, T: DType, D: Dev> CompiledGraph<S, T, D> {
     }
 }
 
-#[derive(PartialEq, Debug, Clone, Copy)]
+#[derive(CubeType, Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum BinaryOpType {
     Add,
     Div,
@@ -707,7 +714,7 @@ impl BinaryOpType {
     }
 }
 
-#[derive(PartialEq, Debug, Clone)]
+#[derive(CubeType, Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum UnaryOpType {
     Neg,
     Sqrt,

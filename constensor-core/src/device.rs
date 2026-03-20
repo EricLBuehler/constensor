@@ -1,7 +1,8 @@
 #[cfg(feature = "cuda")]
 use crate::cuda_backend::CudaDevice;
 use crate::{
-    cpu_storage::CpuDevice,
+    backends::wgpu_backend::WgpuDevice,
+    cpu_backend::CpuDevice,
     storage::{BackendDevice, Storage},
     CompiledGraph, DType, GraphNode, Result, Shape,
 };
@@ -17,6 +18,14 @@ pub struct Cpu;
 impl Dev for Cpu {
     fn resolve() -> Result<Device> {
         Ok(Device::Cpu)
+    }
+}
+#[derive(Clone)]
+pub struct Wgpu;
+
+impl Dev for Wgpu {
+    fn resolve() -> Result<Device> {
+        Ok(Device::Wgpu)
     }
 }
 
@@ -68,6 +77,7 @@ pub enum Device {
     #[cfg(feature = "cuda")]
     Cuda(CudaDevice),
     Cpu,
+    Wgpu,
 }
 
 impl Device {
@@ -79,6 +89,7 @@ impl Device {
             #[cfg(feature = "cuda")]
             Self::Cuda(cuda) => Ok(Storage::Cuda(cuda.run_graph::<S, T, D>(graph)?)),
             Self::Cpu => Ok(Storage::Cpu(CpuDevice.run_graph::<S, T, D>(graph)?)),
+            Self::Wgpu => Ok(Storage::Wgpu(WgpuDevice.run_graph::<S, T, D>(graph)?)),
         }
     }
 
@@ -90,6 +101,7 @@ impl Device {
             #[cfg(feature = "cuda")]
             Self::Cuda(cuda) => cuda.compile::<S, T, D>(graph),
             Self::Cpu => CpuDevice.compile::<S, T, D>(graph),
+            Self::Wgpu => WgpuDevice.compile::<S, T, D>(graph),
         }
     }
 }

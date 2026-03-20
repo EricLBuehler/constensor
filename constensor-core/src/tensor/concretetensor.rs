@@ -1,5 +1,5 @@
 use crate::{
-    device::{Cpu, Dev},
+    device::{Cpu, Dev, Wgpu},
     storage::Storage,
     DType, Result, Shape, R1, R2, R3,
 };
@@ -108,6 +108,7 @@ macro_rules! tensor_api {
 }
 
 tensor_api!(Cpu);
+tensor_api!(Wgpu);
 #[cfg(feature = "cuda")]
 tensor_api!(Cuda<0>);
 

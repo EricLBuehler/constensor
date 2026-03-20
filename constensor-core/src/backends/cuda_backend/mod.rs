@@ -1,3 +1,4 @@
+use super::scheduler::topo_order;
 use cudarc::{
     cublas::CudaBlas,
     driver::{
@@ -6,7 +7,6 @@ use cudarc::{
     nvrtc::{CompileOptions, Ptx},
 };
 use error::WrapErr;
-use petgraph::{algo::toposort, prelude::DiGraphMap};
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
     Arc, Mutex, RwLock,
@@ -474,45 +474,8 @@ impl BackendDevice for CudaDevice {
         &self,
         graph: Vec<GraphNode<T>>,
     ) -> Result<CompiledGraph<S, T, D>> {
-        // Build a dependency graph of tensor indices
-        let mut dep_graph = DiGraphMap::<usize, ()>::new();
-        for idx in 0..graph.len() {
-            dep_graph.add_node(idx);
-        }
-
-        for (idx, node) in graph.iter().enumerate() {
-            match &node.op {
-                Op::BinaryOp { l_id, r_id, .. } => {
-                    dep_graph.add_edge(l_id.get(), idx, ());
-                    dep_graph.add_edge(r_id.get(), idx, ());
-                }
-                Op::UnaryOp { v_id, .. } => {
-                    dep_graph.add_edge(v_id.get(), idx, ());
-                }
-                Op::FusedMulAdd { a_id, b_id, c_id } => {
-                    dep_graph.add_edge(a_id.get(), idx, ());
-                    dep_graph.add_edge(b_id.get(), idx, ());
-                    dep_graph.add_edge(c_id.get(), idx, ());
-                }
-                Op::MatMul {
-                    l_id, r_id, o_id, ..
-                } => {
-                    dep_graph.add_edge(l_id.get(), idx, ());
-                    dep_graph.add_edge(r_id.get(), idx, ());
-                    if let Some(o_id) = o_id {
-                        dep_graph.add_edge(o_id.get(), idx, ());
-                    }
-                }
-                Op::Permute { v_id } => {
-                    dep_graph.add_edge(v_id.get(), idx, ());
-                }
-                // These don’t create incoming edges
-                Op::NoOp | Op::Fill { .. } | Op::Rand | Op::Randn { .. } | Op::Arange { .. } => {}
-            }
-        }
-
-        // Compute topological order
-        let order = toposort(&dep_graph, None).expect("Cycle detected in graph!");
+        // Compute topological order using shared scheduler
+        let order = topo_order(&graph);
 
         // New kernel and grouping logic with matmul input tracking
         let mut kernels = Vec::<CudaCompiledKernel<T>>::new();
